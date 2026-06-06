@@ -9,9 +9,7 @@ description = "Enhanced Bilibili topic search: rank relevant videos, summarize t
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-dependencies = [
-  "httpx>=0.26",
-]
+dependencies = []  # core runs on the standard library only (urllib) — no installs needed
 
 [project.optional-dependencies]
 server = ["fastapi>=0.110", "uvicorn>=0.27"]

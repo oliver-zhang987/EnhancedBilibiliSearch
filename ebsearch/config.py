@@ -52,6 +52,15 @@ class Config:
     allow_asr: bool = False                        # subtitle-only by default (cheapest)
     min_play: int = 1000                           # drop near-zero-view results
     min_duration_sec: int = 120                    # drop clips/shorts
+    max_duration_sec: int = 3600                   # drop multi-hour course compilations
+    allow_llm_rerank: bool = False                 # optional cheap-LLM rerank of survivors
+
+    # --- query strategy (see search/query.py); biggest free win is the duration filter ---
+    query_suggest: bool = False                    # B站 suggest to normalize the query (cheap)
+    query_expand: bool = False                     # LLM query expansion (best precision upgrade)
+    query_expand_pages: int = 1                    # pages per expansion variant (keep small)
+    query_multi_order: bool = False                # also order=click (off: drifts off-topic)
+    rerank_model: str = "deepseek-v4-flash"        # cheap model for rerank/expansion
 
     # --- IO ---
     cache_dir: str = ".cache"
@@ -74,5 +83,12 @@ class Config:
             allow_asr=_bool("EBS_ALLOW_ASR", cls.allow_asr),
             min_play=_int("EBS_MIN_PLAY", cls.min_play),
             min_duration_sec=_int("EBS_MIN_DURATION_SEC", cls.min_duration_sec),
+            max_duration_sec=_int("EBS_MAX_DURATION_SEC", cls.max_duration_sec),
+            allow_llm_rerank=_bool("EBS_ALLOW_LLM_RERANK", cls.allow_llm_rerank),
+            query_suggest=_bool("EBS_QUERY_SUGGEST", cls.query_suggest),
+            query_expand=_bool("EBS_QUERY_EXPAND", cls.query_expand),
+            query_expand_pages=_int("EBS_QUERY_EXPAND_PAGES", cls.query_expand_pages),
+            query_multi_order=_bool("EBS_QUERY_MULTI_ORDER", cls.query_multi_order),
+            rerank_model=_env("EBS_RERANK_MODEL", cls.rerank_model),
             cache_dir=_env("EBS_CACHE_DIR", cls.cache_dir),
         )
