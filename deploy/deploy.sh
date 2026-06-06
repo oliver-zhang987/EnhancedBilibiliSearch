@@ -6,6 +6,10 @@ VS_API_KEY=$(grep '^VS_API_KEY=' "$VS" | cut -d= -f2- | tr -d '\r"')
 DS_KEY=$(grep '^VS_LLM_API_KEY=' "$VS" | cut -d= -f2- | tr -d '\r"')
 DS_BASE=$(grep '^VS_LLM_BASE_URL=' "$VS" | cut -d= -f2- | tr -d '\r"')
 [ -z "$DS_BASE" ] && DS_BASE=https://api.deepseek.com
+# Synthesis: Groq gpt-oss-120b via the overseas relay (geo-blocked from China).
+GROQ_KEY=$(grep '^VS_ASR_OPENAI_API_KEY=' "$VS" | cut -d= -f2- | tr -d '\r"')
+RELAY=$(grep '^VS_ASR_OPENAI_PROXY=' "$VS" | cut -d= -f2- | tr -d '\r"')
+[ -z "$RELAY" ] && RELAY=http://91.98.158.38:18080
 # reuse an existing gate key if present, else mint one
 if [ -f /opt/ebsearch/.env ] && grep -q '^EBS_SERVER_API_KEY=' /opt/ebsearch/.env; then
   EBS_KEY=$(grep '^EBS_SERVER_API_KEY=' /opt/ebsearch/.env | cut -d= -f2-)
@@ -17,12 +21,15 @@ EBS_BACKEND_URL=http://127.0.0.1:8010
 EBS_BACKEND_API_KEY=$VS_API_KEY
 EBS_LLM_API_KEY=$DS_KEY
 EBS_LLM_BASE_URL=$DS_BASE
-EBS_SYNTH_MODEL=deepseek-v4-pro
+EBS_SYNTH_MODEL=openai/gpt-oss-120b
+EBS_SYNTH_BASE_URL=https://api.groq.com/openai/v1
+EBS_SYNTH_API_KEY=$GROQ_KEY
+EBS_SYNTH_PROXY=$RELAY
 EBS_COOKIES_FILE=/app/cookies.txt
 EBS_SERVER_API_KEY=$EBS_KEY
 EBS_HOST=127.0.0.1
 EBS_PORT=8020
-EBS_MAX_VIDEOS=6
+EBS_MAX_VIDEOS=4
 EBS_MIN_PLAY=1000
 EOF
 chmod 600 /opt/ebsearch/.env

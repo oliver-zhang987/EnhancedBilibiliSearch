@@ -89,12 +89,13 @@ def build_evidence(topic: str, summaries: Any) -> Dict[str, Any]:
         media = s.get("media") or {}
         duration = media.get("duration") or 0
         chapters = []
-        for ch in s.get("chapters") or []:
+        for ch in (s.get("chapters") or [])[:10]:
+            # chapter titles + timestamps only (bullets dropped to keep the evidence
+            # pack small enough for tight provider token-per-minute limits)
             chapters.append({
                 "title": ch.get("title", ""),
                 "t": _mmss(ch.get("start", 0)),
                 "start_sec": int(ch.get("start", 0) or 0),
-                "bullets": ch.get("bullets") or [],
             })
         pack["videos"].append({
             "bvid": bvid,
@@ -103,8 +104,8 @@ def build_evidence(topic: str, summaries: Any) -> Dict[str, Any]:
             "duration_min": round((duration or 0) / 60, 1),
             "url": media.get("url") or it.get("url") or _video_url(bvid),
             "tldr": s.get("tldr", ""),
-            "key_points": s.get("key_points") or [],
-            "keywords": s.get("keywords") or [],
+            "key_points": (s.get("key_points") or [])[:6],
+            "keywords": (s.get("keywords") or [])[:8],
             "chapters": chapters,
         })
     return pack

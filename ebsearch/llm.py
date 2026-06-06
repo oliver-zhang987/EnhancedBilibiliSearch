@@ -27,8 +27,14 @@ def chat(
     max_tokens: int = 4096,
     temperature: float = 0.3,
     timeout: float = 180.0,
+    proxy: Optional[str] = None,
 ) -> str:
-    """One blocking chat completion. Returns the assistant text ("" on empty)."""
+    """One blocking chat completion. Returns the assistant text ("" on empty).
+
+    `proxy` (e.g. "http://host:port") routes this request through a forward proxy
+    via CONNECT — TLS stays end-to-end to the provider, so the proxy never sees the
+    key. Used to reach geo-blocked providers (Groq/OpenAI) from the China server.
+    """
     url = (base_url or "https://api.deepseek.com").rstrip("/") + "/chat/completions"
     payload = {
         "model": model,
@@ -39,26 +45,64 @@ def chat(
             + [{"role": "user", "content": user}]
         ),
     }
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer %s" % (api_key or ""),
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = json.loads(r.read().decode("utf-8"))
+    body = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer %s" % (api_key or ""),
+    }
+    if proxy:
+        # Explicit CONNECT tunnel. urllib's ProxyHandler does NOT reliably tunnel
+        # HTTPS — it leaks the request to the origin IP (-> geo-block 403). This
+        # mirrors `curl -x`: plain connect to the proxy, CONNECT to the target,
+        # then TLS end-to-end to the target (the proxy never sees the key/body).
+        import http.client
+        import ssl as _ssl
+        from urllib.parse import urlparse
+        pu, tu = urlparse(proxy), urlparse(url)
+        conn = http.client.HTTPSConnection(
+            pu.hostname, pu.port or 8080, timeout=timeout,
+            context=_ssl.create_default_context())
+        conn.set_tunnel(tu.hostname, tu.port or 443)
+        try:
+            conn.request("POST", tu.path + (("?" + tu.query) if tu.query else ""),
+                         body=body, headers=headers)
+            r = conn.getresponse()
+            raw = r.read().decode("utf-8")
+            if r.status >= 400:
+                raise RuntimeError("HTTP %s via proxy: %s" % (r.status, raw[:200]))
+        finally:
+            conn.close()
+        data = json.loads(raw)
+    else:
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
     return (data["choices"][0]["message"].get("content") or "")
 
 
 def synth_caller(cfg) -> Callable[[str, str], str]:
-    """(system, user) -> text using the strong synthesis model."""
+    """(system, user) -> text using the strong synthesis model.
+
+    Uses synth_* credentials/proxy when set (e.g. Groq gpt-oss-120b via the overseas
+    relay), else falls back to the shared llm_* (DeepSeek) direct.
+    """
+    base = getattr(cfg, "synth_base_url", None) or cfg.llm_base_url
+    key = getattr(cfg, "synth_api_key", None) or cfg.llm_api_key or ""
+    proxy = getattr(cfg, "synth_proxy", None)
+    model = getattr(cfg, "synth_model", "deepseek-v4-pro")
+
     def _c(system: str, user: str) -> str:
-        return chat(system, user, model=getattr(cfg, "synth_model", "deepseek-v4-pro"),
-                    base_url=cfg.llm_base_url, api_key=cfg.llm_api_key or "",
-                    max_tokens=8192, temperature=0.3)
+        try:
+            return chat(system, user, model=model, base_url=base, api_key=key,
+                        max_tokens=4500, temperature=0.3, proxy=proxy)
+        except Exception:
+            # Always produce a report: fall back to DeepSeek dsv4pro (China-direct,
+            # no rate cap) if the primary fails — e.g. Groq free-tier TPM 413.
+            if not proxy and base == cfg.llm_base_url:
+                raise  # we're already on the fallback target; don't loop
+            return chat(system, user, model="deepseek-v4-pro",
+                        base_url=cfg.llm_base_url, api_key=cfg.llm_api_key or "",
+                        max_tokens=8192, temperature=0.3)
     return _c
 
 

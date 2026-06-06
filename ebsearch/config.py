@@ -39,6 +39,12 @@ class Config:
     synth_model: str = "deepseek-v4-pro"
     llm_api_key: Optional[str] = None
     llm_base_url: str = "https://api.deepseek.com"
+    # Synthesis can use a different provider/credentials and route via a forward
+    # proxy (e.g. Groq's gpt-oss-120b through the overseas relay). Falls back to the
+    # llm_* values above when unset. rerank/expand always use llm_* directly.
+    synth_base_url: Optional[str] = None   # default: llm_base_url
+    synth_api_key: Optional[str] = None    # default: llm_api_key
+    synth_proxy: Optional[str] = None      # e.g. http://host:port (CONNECT tunnel)
 
     # --- Bilibili search ---
     cookies_file: Optional[str] = None            # Netscape cookies (buvid3/SESSDATA)
@@ -47,7 +53,7 @@ class Config:
     tids: int = 0                                  # 0 = all partitions
 
     # --- Selection / cost gates (tunable; compared during dev) ---
-    max_videos: int = 6                            # how many videos to summarize per topic
+    max_videos: int = 4                            # videos summarized per topic (4 fits Groq free-tier TPM for synthesis; raise with a paid tier)
     candidate_pages: int = 2                       # search pages to pull before re-ranking
     allow_asr: bool = False                        # subtitle-only by default (cheapest)
     min_play: int = 1000                           # drop near-zero-view results
@@ -74,6 +80,9 @@ class Config:
             synth_model=_env("EBS_SYNTH_MODEL", cls.synth_model),
             llm_api_key=_env("EBS_LLM_API_KEY") or None,
             llm_base_url=_env("EBS_LLM_BASE_URL", cls.llm_base_url),
+            synth_base_url=_env("EBS_SYNTH_BASE_URL") or None,
+            synth_api_key=_env("EBS_SYNTH_API_KEY") or None,
+            synth_proxy=_env("EBS_SYNTH_PROXY") or None,
             cookies_file=_env("EBS_COOKIES_FILE") or None,
             search_order=_env("EBS_SEARCH_ORDER", cls.search_order),
             duration_filter=_int("EBS_DURATION_FILTER", cls.duration_filter),
