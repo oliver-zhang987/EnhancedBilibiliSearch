@@ -13,11 +13,18 @@ dependencies = []  # core runs on the standard library only (urllib) — no inst
 
 [project.optional-dependencies]
 server = ["fastapi>=0.110", "uvicorn>=0.27"]
-dev = ["pytest>=7"]
-all = ["fastapi>=0.110", "uvicorn>=0.27", "pytest>=7"]
+dev = ["pytest>=7", "fastapi>=0.110", "uvicorn>=0.27", "httpx>=0.27"]
+all = ["fastapi>=0.110", "uvicorn>=0.27", "pytest>=7", "httpx>=0.27"]
 
 [project.scripts]
 ebsearch = "ebsearch.cli:main"
+ebsearch-server = "ebsearch.server.app:main"
 
 [tool.setuptools.packages.find]
 include = ["ebsearch*"]
+
+[tool.setuptools.package-data]
+"ebsearch.web" = ["*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -5,9 +5,9 @@ Bilibili videos. It ranks topic-relevant videos, summarizes the best ones (reusi
 [AIVideoSummary](https://github.com/oliver-zhang987/AIVideoSummary) backend), and
 synthesizes one report with a stronger LLM.
 
-> Status: **early / in active exploration.** Foundation + contracts are in place; the
-> ranking, synthesis, and query strategies are being explored and compared before the
-> design is frozen. Not yet usable end-to-end.
+> Status: **works end-to-end (CLI / API / web).** Per-video summaries are produced via
+> the AIVideoSummary backend; ranking, synthesis, and query strategies are tuned and the
+> contracts are stable. See **Run** below.
 
 ## Pipeline
 
@@ -45,6 +45,61 @@ It does *not* modify the existing browser extension.
 - **Don't wing the Bilibili side.** Search behavior (WBI signing, risk control, result
   shape) is validated against the live API before being built on. Note: the canonical
   `bilibili-API-collect` doc was taken down, so behavior is verified empirically.
+
+## Run
+
+Copy `.env.example` → `.env` and fill in the keys you need. At minimum set
+`EBS_LLM_API_KEY` (synthesis) and point `EBS_BACKEND_URL` at a running AIVideoSummary
+backend (default `http://127.0.0.1:8010`); set `EBS_BACKEND_API_KEY` if that backend
+requires one. The core has **no pip dependencies** (stdlib only); the server/tests need
+the extras below.
+
+```bash
+pip install -e .            # core only (CLI)
+pip install -e ".[server]"  # + FastAPI/uvicorn for the API + web UI
+pip install -e ".[dev]"     # + pytest/httpx to run the tests
+```
+
+**CLI** — Markdown to stdout (`--out FILE` to write a file, `--json` to also dump the
+report JSON to stderr; `--max/--duration/--asr/--expand/--suggest/--rerank` override
+config):
+
+```bash
+ebsearch "大语言模型 RAG 检索增强"
+ebsearch "向量数据库" --max 4 --duration 2 --rerank --out report.md
+```
+
+**Server (REST API)** — background jobs; `research()` blocks ~1–2 min per topic:
+
+```bash
+python -m ebsearch.server.app      # or: ebsearch-server
+# binds EBS_HOST:EBS_PORT (default 0.0.0.0:8020)
+```
+
+```bash
+# start a job -> {"job_id": "..."}  (HTTP 202)
+curl -sX POST localhost:8020/api/research \
+  -H 'Content-Type: application/json' \
+  -d '{"topic":"大语言模型 RAG 检索增强","max_videos":4,"allow_llm_rerank":true}'
+# poll -> {"status":"pending|running|done|error","progress":[...],"markdown":"...","report":{...}}
+curl -s localhost:8020/api/research/<job_id>
+curl -s localhost:8020/health   # {"ok":true}
+```
+
+Server env: `EBS_HOST`/`EBS_PORT` (bind), `EBS_SERVER_API_KEY` (if set, `/api/*`
+requires an `X-API-Key` header), `EBS_CORS_ORIGINS` (comma-separated; default `*`).
+
+**Web UI** — open `http://localhost:8020/` (served at `/` by the server). Enter a topic,
+tweak options (摘要视频数 / 时长筛选 / ASR / 扩展 / 重排), click **生成报告**; the page
+polls every ~3 s, streams the stage progress (候选→筛选→摘要→合成), and renders the
+Markdown report. If `EBS_SERVER_API_KEY` is set, a key field appears and is stored in
+`localStorage`.
+
+**Tests** (offline, hermetic — no network/LLM/backend):
+
+```bash
+python -m pytest -q
+```
 
 ## Config
 
