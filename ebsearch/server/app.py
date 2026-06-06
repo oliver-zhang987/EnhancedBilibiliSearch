@@ -18,8 +18,11 @@ Env:
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -78,6 +81,55 @@ _JOBS: Dict[str, _Job] = {}
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ebs-research")
 
 
+# --------------------------------------------------------------------------- #
+# History: persist finished reports to disk so they survive restarts. A small
+# index file backs the list view; full records are one JSON per id.
+# --------------------------------------------------------------------------- #
+_DATA_DIR = Path(os.environ.get("EBS_DATA_DIR", "/app/data"))
+_HIST_DIR = _DATA_DIR / "history"
+_HIST_INDEX = _DATA_DIR / "history_index.json"
+_HIST_LOCK = threading.Lock()
+_HIST_MAX = int(os.environ.get("EBS_HISTORY_MAX", "200"))
+_ID_RE = re.compile(r"^[A-Za-z0-9]+$")  # guard against path traversal in {id}
+
+
+def _load_index_locked() -> List[Dict[str, Any]]:
+    try:
+        return json.loads(_HIST_INDEX.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _hist_save(job: "_Job", result: Dict[str, Any]) -> None:
+    """Write the finished report + update the index (best-effort, never raises)."""
+    try:
+        created = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        rec = {
+            "id": job.id, "topic": job.topic, "created_at": created,
+            "generated_at": (result.get("report") or {}).get("generated_at", ""),
+            "n_candidates": result.get("n_candidates"),
+            "n_selected": result.get("n_selected"),
+            "n_summarized": result.get("n_summarized"),
+            "markdown": result.get("markdown"), "report": result.get("report"),
+        }
+        meta = {k: rec[k] for k in ("id", "topic", "created_at", "generated_at", "n_summarized")}
+        with _HIST_LOCK:
+            _HIST_DIR.mkdir(parents=True, exist_ok=True)
+            (_HIST_DIR / (job.id + ".json")).write_text(
+                json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+            idx = [m for m in _load_index_locked() if m.get("id") != job.id]
+            idx.insert(0, meta)
+            for old in idx[_HIST_MAX:]:  # trim oldest beyond the cap
+                try:
+                    (_HIST_DIR / (old["id"] + ".json")).unlink()
+                except OSError:
+                    pass
+            idx = idx[:_HIST_MAX]
+            _HIST_INDEX.write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _run_job(job: _Job, overrides: Dict[str, Any]) -> None:
     job.status = "running"
     job.log("任务已启动…")
@@ -99,6 +151,7 @@ def _run_job(job: _Job, overrides: Dict[str, Any]) -> None:
             "完成：%d 候选 → %d 入选 → %d 摘要"
             % (res.n_candidates, res.n_selected, res.n_summarized)
         )
+        _hist_save(job, job.result)
         job.status = "done"
     except Exception as e:  # surface to the client; keep the server alive
         job.error = "%s: %s" % (type(e).__name__, e)
@@ -181,6 +234,33 @@ def create_app() -> FastAPI:
         if job is None:
             raise HTTPException(status_code=404, detail="unknown job_id")
         return JSONResponse(job.snapshot())
+
+    @app.get("/api/history", dependencies=[Depends(_require_api_key)])
+    def history_list() -> Any:
+        with _HIST_LOCK:
+            return JSONResponse(_load_index_locked())
+
+    @app.get("/api/history/{rec_id}", dependencies=[Depends(_require_api_key)])
+    def history_get(rec_id: str) -> Any:
+        if not _ID_RE.match(rec_id):
+            raise HTTPException(status_code=404, detail="not found")
+        p = _HIST_DIR / (rec_id + ".json")
+        if not p.is_file():
+            raise HTTPException(status_code=404, detail="not found")
+        return JSONResponse(json.loads(p.read_text(encoding="utf-8")))
+
+    @app.delete("/api/history/{rec_id}", dependencies=[Depends(_require_api_key)])
+    def history_delete(rec_id: str) -> Dict[str, bool]:
+        if not _ID_RE.match(rec_id):
+            raise HTTPException(status_code=404, detail="not found")
+        with _HIST_LOCK:
+            try:
+                (_HIST_DIR / (rec_id + ".json")).unlink()
+            except OSError:
+                pass
+            idx = [m for m in _load_index_locked() if m.get("id") != rec_id]
+            _HIST_INDEX.write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
+        return {"ok": True}
 
     return app
 
