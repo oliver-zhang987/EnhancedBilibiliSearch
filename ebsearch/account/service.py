@@ -157,3 +157,33 @@ def me(user_id: int) -> Dict[str, Any]:
     if row is None:
         raise AuthError("User not found.", code="not_found")
     return user_public(row)
+
+
+def activate(access_code: str) -> Tuple[Dict[str, Any], str]:
+    """Activate an ANONYMOUS account with an access code — no PII collected.
+
+    This is the access-code-only flow (no phone, no SMS/OTP), chosen to minimise
+    PIPL exposure for a free service. Each use of a code validates + consumes one
+    slot, creates a fresh anonymous user with the granted (free-quota) credits,
+    writes a grant ledger row, and issues a JWT. Identity lives entirely in the
+    JWT held by the browser/extension. Raises :class:`AuthError`.
+    """
+    code = (access_code or "").strip()
+    with db.transaction() as conn:
+        granted = _consume_invite_code(code, conn)  # AuthError('invalid_invite') if bad
+        user_id = db.create_user(
+            phone_hash=None,          # anonymous: no phone stored
+            phone_last4=None,
+            credits=granted,
+            invite_code=code,
+            consented=True,
+            created_at=_now_iso(),
+            conn=conn,
+        )
+        db.insert_ledger(
+            user_id=user_id, delta=granted, balance_after=granted,
+            reason="activate grant", job_id=None, ts=_now_iso(), conn=conn,
+        )
+        row = db.get_user_by_id(user_id, conn=conn)
+    token = tokens.issue_token(user_id)
+    return user_public(row), token

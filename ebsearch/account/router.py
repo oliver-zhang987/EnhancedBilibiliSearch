@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Optional
 
-from . import config, db, otp, service, tokens
+from . import db, service, tokens
 
 
 # --------------------------------------------------------------------------- #
@@ -73,41 +73,27 @@ except Exception:  # fastapi not installed (e.g. test env)
 # --------------------------------------------------------------------------- #
 # Request models (built lazily, cached in module globals)
 # --------------------------------------------------------------------------- #
-# Placeholders so static references resolve; populated by ``_ensure_models``.
-SendCodeBody = None  # type: ignore[assignment]
-RegisterBody = None  # type: ignore[assignment]
-LoginBody = None  # type: ignore[assignment]
+# Placeholder so static references resolve; populated by ``_ensure_models``.
+ActivateBody = None  # type: ignore[assignment]
 
 
 def _ensure_models():
-    """Define the pydantic request models once and stash them in module globals.
+    """Define the pydantic request model once and stash it in module globals.
 
-    Returns ``(SendCodeBody, RegisterBody, LoginBody)``. pydantic is imported
-    lazily here so the package imports without it.
+    Returns ``ActivateBody``. pydantic is imported lazily here so the package
+    imports without it.
     """
-    global SendCodeBody, RegisterBody, LoginBody
-    if SendCodeBody is not None:
-        return SendCodeBody, RegisterBody, LoginBody
+    global ActivateBody
+    if ActivateBody is not None:
+        return ActivateBody
 
     from pydantic import BaseModel
 
-    class _SendCodeBody(BaseModel):
-        phone: str
-
-    class _RegisterBody(BaseModel):
-        phone: str
-        code: str
-        invite_code: str
-        consented: bool = False
-
-    class _LoginBody(BaseModel):
-        phone: str
+    class _ActivateBody(BaseModel):
         code: str
 
-    SendCodeBody = _SendCodeBody
-    RegisterBody = _RegisterBody
-    LoginBody = _LoginBody
-    return SendCodeBody, RegisterBody, LoginBody
+    ActivateBody = _ActivateBody
+    return ActivateBody
 
 
 # --------------------------------------------------------------------------- #
@@ -123,41 +109,19 @@ def build_auth_router():
 
     router = APIRouter(prefix="/auth", tags=["auth"])
 
-    # The request models must live in this module's GLOBALS, not this function's
+    # The request model must live in this module's GLOBALS, not this function's
     # locals: with ``from __future__ import annotations`` the endpoint argument
     # annotations are stored as strings and FastAPI resolves them via
     # ``typing.get_type_hints`` against the function's ``__globals__``. A class
     # defined in local scope would be invisible there and FastAPI would mistake
-    # the body for a query parameter. ``_ensure_models`` injects them globally.
-    SendCodeBody, RegisterBody, LoginBody = _ensure_models()
+    # the body for a query parameter. ``_ensure_models`` injects it globally.
+    ActivateBody = _ensure_models()
 
-    @router.post("/send-code")
-    def send_code(body: SendCodeBody):
+    @router.post("/activate")
+    def activate(body: ActivateBody):
+        """Access-code-only activation: no phone / SMS, no PII collected."""
         try:
-            result = otp.send_code(body.phone)
-        except otp.OTPError as exc:
-            # 429-ish conditions (cooldown / hourly cap) -> 400 with clear detail.
-            raise HTTPException(status_code=400, detail=str(exc))
-        # debug_code is only non-null when provider == mock (handled in otp.py).
-        out = {"sent": result["sent"]}
-        if result.get("debug_code") is not None:
-            out["debug_code"] = result["debug_code"]
-        return out
-
-    @router.post("/register")
-    def register(body: RegisterBody):
-        try:
-            user, token = service.register(
-                body.phone, body.code, body.invite_code, body.consented
-            )
-        except service.AuthError as exc:
-            raise HTTPException(status_code=_auth_status(exc), detail=str(exc))
-        return {"token": token, "user": user}
-
-    @router.post("/login")
-    def login(body: LoginBody):
-        try:
-            user, token = service.login(body.phone, body.code)
+            user, token = service.activate(body.code)
         except service.AuthError as exc:
             raise HTTPException(status_code=_auth_status(exc), detail=str(exc))
         return {"token": token, "user": user}

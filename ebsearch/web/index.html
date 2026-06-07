@@ -892,6 +892,8 @@
   .consent-row a{color:var(--accent,#8b7bff)}
   .auth-submit{width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#6d5efc,#9b5efc);color:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer}
   .auth-err{color:#ff7a7a;font-size:12.5px;min-height:16px;margin-top:10px;text-align:center}
+  .auth-foot{margin-top:14px;font-size:11.5px;line-height:1.5;color:var(--faint,#9a9ab0);text-align:center}
+  .auth-foot a{color:var(--accent,#8b7bff)}
   .modal-x{float:right;background:none;border:none;color:var(--faint,#9a9ab0);font-size:22px;cursor:pointer;line-height:1;margin:-6px -6px 0 0}
   .aigc-note{display:inline-block;font-size:12px;color:var(--faint,#9a9ab0);background:rgba(127,127,160,.1);border:1px solid var(--border,#33334a);border-radius:999px;padding:4px 12px;margin-bottom:12px}
   .privacy-body{font-size:13px;line-height:1.7;color:var(--text,#ddd);max-height:60vh;overflow:auto}
@@ -901,35 +903,15 @@
 <div class="modal-overlay" id="authModal" hidden>
   <div class="modal-card">
     <button class="modal-x" id="authClose" type="button">&times;</button>
-    <h2>欢迎使用 B站主题研究</h2>
-    <div class="modal-sub">手机号 + 邀请码注册，注册即赠送积分</div>
-    <div class="auth-tabs">
-      <button id="authTabLogin" type="button" class="active">登录</button>
-      <button id="authTabReg" type="button">注册</button>
-    </div>
+    <h2>输入访问码</h2>
+    <div class="modal-sub">用访问码进入即获赠免费额度（积分）。无需手机号，不收集任何个人信息。</div>
     <div class="auth-field">
-      <label>手机号</label>
-      <input id="authPhone" type="tel" inputmode="numeric" placeholder="请输入手机号" autocomplete="off" />
+      <label>访问码</label>
+      <input id="authCode" type="text" placeholder="请输入访问码" autocomplete="off" />
     </div>
-    <div class="auth-field">
-      <label>验证码</label>
-      <div class="code-row">
-        <input id="authCode" type="text" inputmode="numeric" placeholder="6 位验证码" autocomplete="off" />
-        <button id="authSendCode" type="button">发送验证码</button>
-      </div>
-    </div>
-    <div id="regOnly" style="display:none">
-      <div class="auth-field">
-        <label>邀请码</label>
-        <input id="authInvite" type="text" placeholder="请输入邀请码" autocomplete="off" />
-      </div>
-      <label class="consent-row">
-        <input id="authConsent" type="checkbox" />
-        <span>我已阅读并同意 <a href="#" id="authPrivacy">《隐私政策》</a>，同意按 PIPL 规定处理我的手机号（仅以加盐哈希存储，不保存明文）。</span>
-      </label>
-    </div>
-    <button class="auth-submit" id="authSubmit" type="button">登录</button>
+    <button class="auth-submit" id="authSubmit" type="button">进入</button>
     <div class="auth-err" id="authErr"></div>
+    <div class="auth-foot">继续即代表同意 <a href="#" id="authPrivacy">《隐私政策》</a>（本服务仅保存一个匿名账号 ID 与用量，不收集个人信息）。</div>
   </div>
 </div>
 
@@ -1012,10 +994,8 @@
   }
 
   // ---- account UI: persistent sidebar card + compact mobile topbar ----
-  function _avatarText() {
-    var l4 = (authUser && authUser.phone_last4) || "";
-    return l4 ? l4.slice(-2) : "我";
-  }
+  function _displayName() { return authUser ? ("访客 #" + authUser.id) : ""; }
+  function _avatarText() { return authUser ? String(authUser.id).slice(-2) : "我"; }
   function _credits() { return (authUser && authUser.credits != null) ? authUser.credits : "—"; }
 
   function renderAccount() {
@@ -1025,7 +1005,7 @@
         panel.innerHTML =
           '<button class="acct-card" id="acctCardBtn" type="button" title="账户">' +
             '<span class="acct-avatar">' + esc(_avatarText()) + '</span>' +
-            '<span class="acct-meta"><span class="acct-name">尾号 ' + esc(authUser.phone_last4 || "----") + '</span>' +
+            '<span class="acct-meta"><span class="acct-name">' + esc(_displayName()) + '</span>' +
               '<span class="acct-bal">◈ ' + _credits() + ' 积分</span></span>' +
             '<svg class="acct-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' +
           '</button>';
@@ -1057,7 +1037,7 @@
     var pop = document.createElement("div");
     pop.id = "acctPop"; pop.className = "acct-pop"; pop._anchor = anchor;
     pop.innerHTML =
-      '<div class="pop-head"><div class="ph-name">尾号 ' + esc(authUser ? (authUser.phone_last4 || "----") : "") + '</div>' +
+      '<div class="pop-head"><div class="ph-name">' + esc(_displayName()) + '</div>' +
         '<div class="ph-bal">◈ ' + _credits() + ' 积分</div></div>' +
       '<button type="button" data-act="refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>刷新积分</button>' +
       '<button type="button" data-act="privacy"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>隐私政策</button>' +
@@ -1083,23 +1063,13 @@
     }, 0);
   }
 
-  // ---- auth modal ----
-  var authMode = "login", codeTimer = null;
-  function openAuth(mode) {
-    authMode = mode || "login";
+  // ---- auth modal (access-code only) ----
+  function openAuth() {
     $("authModal").hidden = false;
-    setAuthMode(authMode);
-    var p = $("authPhone"); if (p) p.focus();
+    $("authErr").textContent = "";
+    var c = $("authCode"); if (c) { c.value = ""; c.focus(); }
   }
   function closeAuth() { $("authModal").hidden = true; }
-  function setAuthMode(mode) {
-    authMode = mode;
-    $("authTabLogin").classList.toggle("active", mode === "login");
-    $("authTabReg").classList.toggle("active", mode === "register");
-    $("regOnly").style.display = (mode === "register") ? "" : "none";
-    $("authSubmit").textContent = (mode === "register") ? "注册" : "登录";
-    $("authErr").textContent = "";
-  }
   function authErr(msg) { $("authErr").textContent = msg || ""; }
   function apiJson(path, method, body) {
     return fetch(path, {
@@ -1112,40 +1082,20 @@
       );
     });
   }
-  function doSendCode() {
-    var phone = ($("authPhone").value || "").trim();
-    if (!/^\d{6,15}$/.test(phone)) { authErr("请输入有效的手机号"); return; }
-    var btn = $("authSendCode"); btn.disabled = true;
-    apiJson("/api/auth/send-code", "POST", { phone: phone }).then(function (res) {
-      if (!res.ok) { authErr((res.data && res.data.detail) || "发送失败"); btn.disabled = false; return; }
-      var n = 60; btn.textContent = n + "s";
-      codeTimer = setInterval(function () {
-        n--; if (n <= 0) { clearInterval(codeTimer); btn.disabled = false; btn.textContent = "发送验证码"; }
-        else btn.textContent = n + "s";
-      }, 1000);
-      if (res.data && res.data.debug_code) { $("authCode").value = res.data.debug_code; authErr("（开发模式）验证码已自动填入"); }
-      else toast("验证码已发送");
-    }).catch(function () { authErr("网络错误"); btn.disabled = false; });
-  }
-  function doSubmitAuth() {
-    var phone = ($("authPhone").value || "").trim();
+  function doActivate() {
     var code = ($("authCode").value || "").trim();
-    if (!/^\d{6,15}$/.test(phone)) { authErr("请输入有效的手机号"); return; }
-    if (!code) { authErr("请输入验证码"); return; }
-    if (authMode === "register") {
-      var invite = ($("authInvite").value || "").trim();
-      if (!invite) { authErr("请输入邀请码"); return; }
-      if (!$("authConsent").checked) { authErr("请先勾选并同意隐私政策"); return; }
-      apiJson("/api/auth/register", "POST", { phone: phone, code: code, invite_code: invite, consented: true }).then(handleAuthResp);
-    } else {
-      apiJson("/api/auth/login", "POST", { phone: phone, code: code }).then(handleAuthResp);
-    }
+    if (!code) { authErr("请输入访问码"); return; }
+    var btn = $("authSubmit"); btn.disabled = true;
+    apiJson("/api/auth/activate", "POST", { code: code }).then(function (res) {
+      btn.disabled = false;
+      handleAuthResp(res);
+    }).catch(function () { btn.disabled = false; authErr("网络错误"); });
   }
   function handleAuthResp(res) {
-    if (!res.ok) { authErr((res.data && res.data.detail) || "操作失败"); return; }
+    if (!res.ok) { authErr((res.data && res.data.detail) || "访问码无效"); return; }
     setAuth(res.data.token, res.data.user);
     closeAuth();
-    toast(authMode === "register" ? "注册成功，已赠送积分" : "登录成功");
+    toast("已进入，赠送积分 " + ((res.data.user && res.data.user.credits) || 0));
   }
   function refreshMe(notify) {
     if (!authToken) return;
@@ -1872,10 +1822,8 @@
 
   // ---- auth modal bindings ----
   $("authClose").addEventListener("click", closeAuth);
-  $("authTabLogin").addEventListener("click", function () { setAuthMode("login"); });
-  $("authTabReg").addEventListener("click", function () { setAuthMode("register"); });
-  $("authSendCode").addEventListener("click", doSendCode);
-  $("authSubmit").addEventListener("click", doSubmitAuth);
+  $("authSubmit").addEventListener("click", doActivate);
+  $("authCode").addEventListener("keydown", function (e) { if (e.key === "Enter") doActivate(); });
   $("authModal").addEventListener("click", function (e) { if (e.target === this) closeAuth(); });
   $("authPrivacy").addEventListener("click", function (e) { e.preventDefault(); $("privacyModal").hidden = false; });
   $("privacyClose").addEventListener("click", function () { $("privacyModal").hidden = true; });

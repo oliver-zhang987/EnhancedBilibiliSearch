@@ -205,16 +205,17 @@ def get_user_by_phone_hash(
 
 
 def create_user(
-    phone_hash: str,
-    phone_last4: str,
+    phone_hash: Optional[str],
+    phone_last4: Optional[str],
     credits: int,
     invite_code: Optional[str],
     consented: bool,
     created_at: str,
     conn: Optional[sqlite3.Connection] = None,
 ) -> int:
-    """Insert a user and return the new id. Caller normally runs this inside a
-    transaction together with invite-code consumption + ledger write."""
+    """Insert a user and return the new id. ``phone_hash``/``phone_last4`` are
+    NULL for anonymous (access-code-only) accounts. Caller normally runs this
+    inside a transaction together with invite-code consumption + ledger write."""
     with get_conn(conn) as c:
         cur = _execute(
             c,

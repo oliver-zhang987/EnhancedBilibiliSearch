@@ -1,9 +1,10 @@
 """End-to-end auth + credits test chain for the EBSearch backend.
 
-Offline only — the `research` pipeline is monkeypatched so NO live search/LLM/ASR
-calls happen (cost control). Exercises: mock-OTP registration, the credit gate on
-/api/research (401 unauth, 402 under-funded), per-user history isolation, a
-successful (charged) run, and the empty-result refund.
+Access-code-only auth (no phone/SMS — minimal PIPL footprint). Offline only — the
+`research` pipeline is monkeypatched so NO live search/LLM/ASR calls happen.
+Exercises: access-code activation, the credit gate on /api/research (401 unauth,
+402 under-funded), per-user history isolation, a charged run, and the empty-result
+refund.
 
 Run:  python -m pytest tests/test_auth_credits.py -q   (needs fastapi installed)
 """
@@ -23,14 +24,12 @@ from fastapi.testclient import TestClient  # noqa: E402
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_DB_PATH", str(tmp_path / "users.db"))
     monkeypatch.setenv("AUTH_JWT_SECRET", "test-secret")
-    monkeypatch.setenv("AUTH_PHONE_SALT", "test-salt")
-    monkeypatch.setenv("AUTH_SMS_PROVIDER", "mock")
     monkeypatch.setenv("EBS_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("EBS_MAX_VIDEOS", "4")
     monkeypatch.setenv("EBS_SYNTH_MODEL", "deepseek-v4-pro")
     monkeypatch.setenv("COST_REPORT_BASE", "10")
     monkeypatch.setenv("COST_REPORT_PER_VIDEO", "8")
-    monkeypatch.setenv("COST_SYNTH_PRO_EXTRA", "10")  # => report cost = 10 + 8*4 + 10 = 52
+    monkeypatch.setenv("COST_SYNTH_PRO_EXTRA", "10")  # report cost = 10 + 8*4 + 10 = 52
     from ebsearch import account
     account.reload_settings()
     account.init_db()
@@ -51,10 +50,8 @@ def client(app_mod):
     return TestClient(app_mod.create_app())
 
 
-def _register(client, phone, invite="WELCOME"):
-    code = client.post("/api/auth/send-code", json={"phone": phone}).json()["debug_code"]
-    r = client.post("/api/auth/register",
-                    json={"phone": phone, "code": code, "invite_code": invite, "consented": True})
+def _activate(client, code="WELCOME"):
+    r = client.post("/api/auth/activate", json={"code": code})
     assert r.status_code == 200, r.text
     return r.json()["token"]
 
@@ -64,7 +61,6 @@ def _auth(t):
 
 
 def _fake_research(n_summarized):
-    """Build a stub that mimics ebsearch.pipeline.research's return object."""
     report = types.SimpleNamespace(to_dict=lambda: {"topic": "t", "generated_at": "now",
                                                      "report_type": "comparison"})
     return types.SimpleNamespace(markdown="# report", report=report,
@@ -86,29 +82,32 @@ def test_unauth_401(client):
     assert client.post("/api/research", json={"topic": "x"}).status_code == 401
 
 
+def test_bad_access_code_400(client):
+    assert client.post("/api/auth/activate", json={"code": "NOPE"}).status_code == 400
+
+
 def test_under_funded_402(client):
-    token = _register(client, "13800000011", invite="BROKE")
+    token = _activate(client, "BROKE")
     r = client.post("/api/research", json={"topic": "对比 A vs B"}, headers=_auth(token))
     assert r.status_code == 402
     assert r.json()["detail"]["required"] == 52
 
 
 def test_success_charges_and_saves_history(client, app_mod, monkeypatch):
-    token = _register(client, "13800000012")
+    token = _activate(client)
     monkeypatch.setattr(app_mod, "research", lambda *a, **k: _fake_research(4))
     jid = client.post("/api/research", json={"topic": "对比 A vs B"},
                       headers=_auth(token)).json()["job_id"]
-    st = _wait(client, jid, _auth(token))
-    assert st["status"] == "done"
+    assert _wait(client, jid, _auth(token))["status"] == "done"
     assert client.get("/api/auth/me", headers=_auth(token)).json()["user"]["credits"] == 148  # 200-52
     hist = client.get("/api/history", headers=_auth(token)).json()
     assert len(hist) == 1 and hist[0]["topic"] == "对比 A vs B"
 
 
 def test_empty_result_is_refunded(client, app_mod, monkeypatch):
-    token = _register(client, "13800000013")
+    token = _activate(client)
     monkeypatch.setattr(app_mod, "research", lambda *a, **k: _fake_research(0))
-    jid = client.post("/api/research", json={"topic": "no results topic"},
+    jid = client.post("/api/research", json={"topic": "no results"},
                       headers=_auth(token)).json()["job_id"]
     _wait(client, jid, _auth(token))
     assert client.get("/api/auth/me", headers=_auth(token)).json()["user"]["credits"] == 200
@@ -116,9 +115,9 @@ def test_empty_result_is_refunded(client, app_mod, monkeypatch):
 
 def test_history_is_per_user(client, app_mod, monkeypatch):
     monkeypatch.setattr(app_mod, "research", lambda *a, **k: _fake_research(4))
-    a = _register(client, "13800000014")
+    a = _activate(client)
     jid = client.post("/api/research", json={"topic": "A's topic"}, headers=_auth(a)).json()["job_id"]
     _wait(client, jid, _auth(a))
-    b = _register(client, "13800000015")
-    assert client.get("/api/history", headers=_auth(b)).json() == []        # B sees nothing
-    assert client.get(f"/api/research/{jid}", headers=_auth(b)).status_code == 404  # B can't poll A's job
+    b = _activate(client)
+    assert client.get("/api/history", headers=_auth(b)).json() == []
+    assert client.get(f"/api/research/{jid}", headers=_auth(b)).status_code == 404
