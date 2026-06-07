@@ -18,7 +18,7 @@ _Give it a topic; get one cited, adaptively-laid-out research report synthesized
 </div>
 
 > 这是一个双产品套件的一部分 · *Part of a two-product suite:*
-> [**AIVideoSummary**](../videoSummary)（单个视频 → 摘要）+ **EBSearch**（一个主题 → 综述报告，本仓库，**复用**前者的后端）。
+> [**AIVideoSummary**](https://github.com/oliver-zhang987/AIVideoSummary)（单个视频 → 摘要）+ **EBSearch**（一个主题 → 综述报告，本仓库，**复用**前者的后端）。
 
 ---
 
@@ -28,7 +28,7 @@ _Give it a topic; get one cited, adaptively-laid-out research report synthesized
 
 你想搞懂一个主题——「大语言模型 RAG 检索增强」「向量数据库怎么选」——但 B 站搜索给你几十条视频，
 你不可能一条条看完。**EBSearch** 替你做了：它在全站搜出最相关的视频，挑出最好的 N 个，
-**复用 [AIVideoSummary](../videoSummary) 后端**把每个视频各自摘要好，再用一个更强的模型
+**复用 [AIVideoSummary](https://github.com/oliver-zhang987/AIVideoSummary) 后端**把每个视频各自摘要好，再用一个更强的模型
 （DeepSeek-v4-pro）**合成一份带引用的报告**——而且会**根据主题类型自动换排版**：
 教程给你带时间戳的步骤条，新闻给你时间线，对比给你表格，概念给你术语表，测评给你结论卡。
 
@@ -117,7 +117,7 @@ docker run -d --name ebsearch --restart unless-stopped --network host -m 300m \
 
 ### 🔐 账户与额度 / Account & Credits
 
-EBSearch 内置与 [AIVideoSummary](../videoSummary) **共享的**、仅标准库的 `account` 包
+EBSearch 内置与 [AIVideoSummary](https://github.com/oliver-zhang987/AIVideoSummary) **共享的**、仅标准库的 `account` 包
 （SQLite `users.db` + 手写 HS256 JWT + 积分账本 + OTP）：
 
 - **统一登录**：手机号 + 邀请码 + 短信 OTP，**一次登录两边都认**——两个服务指向同一个 `users.db`，并导出相同的 `AUTH_PHONE_SALT` / `AUTH_JWT_SECRET`。
@@ -156,7 +156,7 @@ python -c "from ebsearch.account import create_invite_code as c; print(c('WELCOM
 You want to understand a topic — "RAG for LLMs," "which vector database to pick" — but Bilibili
 search hands you dozens of videos and you can't watch them all. **EBSearch** does it for you:
 it searches the whole site for the most relevant videos, picks the best N, summarizes each one
-by **reusing the [AIVideoSummary](../videoSummary) backend**, then synthesizes **one cited report**
+by **reusing the [AIVideoSummary](https://github.com/oliver-zhang987/AIVideoSummary) backend**, then synthesizes **one cited report**
 with a stronger model (DeepSeek-v4-pro) — and **adapts the layout to the topic type**: a
 timestamped stepper for how-tos, a timeline for news, a comparison table for matchups, a glossary
 for concepts, verdict cards for reviews. Hours of watching, compressed into one page.
@@ -201,7 +201,7 @@ python -c "from ebsearch.account import create_invite_code as c; print(c('WELCOM
 
 ### 🔐 Account & Credits
 
-The same stdlib-only `account` package as [AIVideoSummary](../videoSummary) (SQLite `users.db` +
+The same stdlib-only `account` package as [AIVideoSummary](https://github.com/oliver-zhang987/AIVideoSummary) (SQLite `users.db` +
 hand-rolled HS256 JWT + credits ledger + OTP) gives **one unified login** (phone + invite code +
 SMS OTP) across both products — one login works on both because they share the same `users.db`
 and the same `AUTH_PHONE_SALT` / `AUTH_JWT_SECRET`. Reports are charged up front
