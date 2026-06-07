@@ -94,7 +94,7 @@ def synth_caller(cfg) -> Callable[[str, str], str]:
     def _c(system: str, user: str) -> str:
         try:
             return chat(system, user, model=model, base_url=base, api_key=key,
-                        max_tokens=4500, temperature=0.3, proxy=proxy)
+                        max_tokens=8000, temperature=0.3, proxy=proxy)
         except Exception:
             # Always produce a report: fall back to DeepSeek dsv4pro (China-direct,
             # no rate cap) if the primary fails — e.g. Groq free-tier TPM 413.

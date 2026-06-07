@@ -393,6 +393,15 @@
 
   .lede { font-size: 15.5px; line-height: 1.8; color: var(--ink-2); }
   .lede p { margin: 0 0 10px; } .lede p:last-child { margin: 0; }
+  /* numbered citation superscripts (Perplexity-style) */
+  sup.cite { line-height: 0; }
+  sup.cite a {
+    display: inline-block; min-width: 15px; height: 15px; padding: 0 3px; margin: 0 1px;
+    font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; vertical-align: super;
+    color: var(--pink-d); background: var(--pink-soft, rgba(251,114,153,.14));
+    border-radius: 4px; text-decoration: none;
+  }
+  sup.cite a:hover { background: var(--pink); color: #fff; }
 
   /* themes */
   .theme-item { padding: 12px 0; border-bottom: 1px dashed var(--line); }
@@ -1038,12 +1047,23 @@
 
     var srcIdx = {};
     (rep.sources || []).forEach(function (s, i) { if (s.bvid) srcIdx[s.bvid] = Object.assign({ _n: i + 1 }, s); });
+    var srcList = rep.sources || [];
+    // Turn [n] citation markers into clickable superscripts linking to source n.
+    function cite(h) {
+      return String(h || "").replace(/\[(\d+)\]/g, function (m, d) {
+        var n = parseInt(d, 10), s = srcList[n - 1];
+        if (!s) return m;
+        var u = s.url || vurl(s.bvid);
+        var ti = esc((s.title || "") + (s.author ? " — " + s.author : ""));
+        return '<sup class="cite"><a href="' + esc(u) + '" target="_blank" rel="noopener" title="' + ti + '">' + n + "</a></sup>";
+      });
+    }
     var html = header;
 
     // overview
     if (rep.overview) {
       html += section("overview", "概览", "overview", "", null,
-        '<div class="lede">' + mdToParas(rep.overview) + "</div>");
+        '<div class="lede">' + cite(mdToParas(rep.overview)) + "</div>");
     }
     // themes
     if ((rep.themes || []).length) {
@@ -1053,15 +1073,15 @@
           return '<a class="cov-link" href="' + vurl(b) + '" target="_blank" rel="noopener">' + esc(label) + "</a>";
         }).join("");
         return '<div class="theme-item"><div class="th-t">' + mdInline(th.title) + "</div>"
-          + '<div class="th-s">' + mdInline(th.summary) + "</div>"
+          + '<div class="th-s">' + cite(mdInline(th.summary)) + "</div>"
           + (cov ? '<div class="th-cov">' + cov + "</div>" : "") + "</div>";
       }).join("");
       html += section("themes", "主题脉络", "themes", "", rep.themes.length, t);
     }
     // consensus vs disagreement (two-up)
     if ((rep.consensus || []).length || (rep.disagreements || []).length) {
-      var cons = (rep.consensus || []).map(function (c) { return "<li>" + mdInline(c) + "</li>"; }).join("");
-      var dis = (rep.disagreements || []).map(function (d) { return "<li>" + mdInline(d) + "</li>"; }).join("");
+      var cons = (rep.consensus || []).map(function (c) { return "<li>" + cite(mdInline(c)) + "</li>"; }).join("");
+      var dis = (rep.disagreements || []).map(function (d) { return "<li>" + cite(mdInline(d)) + "</li>"; }).join("");
       var body = '<div class="cd-grid">';
       if (cons) body += '<div class="cd-col consensus"><h3>共识</h3><ul>' + cons + "</ul></div>";
       if (dis) body += '<div class="cd-col disagree"><h3>分歧与异见</h3><ul>' + dis + "</ul></div>";
@@ -1105,7 +1125,7 @@
     }
     // gaps
     if ((rep.gaps || []).length) {
-      var g = '<ul class="plain-list">' + rep.gaps.map(function (x) { return "<li>" + mdInline(x) + "</li>"; }).join("") + "</ul>";
+      var g = '<ul class="plain-list">' + rep.gaps.map(function (x) { return "<li>" + cite(mdInline(x)) + "</li>"; }).join("") + "</ul>";
       html += section("gaps", "尚未覆盖 / 值得补充", "gaps", "amber", rep.gaps.length, g);
     }
     // sources

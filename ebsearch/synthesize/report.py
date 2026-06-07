@@ -81,31 +81,35 @@ def _normalize_summaries(summaries: Any) -> List[Dict[str, Any]]:
 
 
 def build_evidence(topic: str, summaries: Any) -> Dict[str, Any]:
-    """Build the compact, attributable evidence pack handed to the model."""
+    """Build the attributable evidence pack handed to the model.
+
+    Each video gets a 1-based ``n`` used as its citation number ([n]); the report's
+    ``sources`` are emitted in the same order so [n] maps to sources[n-1].
+    """
     pack: Dict[str, Any] = {"topic": topic, "videos": []}
-    for it in _normalize_summaries(summaries):
+    for i, it in enumerate(_normalize_summaries(summaries)):
         bvid = it["bvid"]
         s = it["summary"]
         media = s.get("media") or {}
         duration = media.get("duration") or 0
         chapters = []
-        for ch in (s.get("chapters") or [])[:10]:
-            # chapter titles + timestamps only (bullets dropped to keep the evidence
-            # pack small enough for tight provider token-per-minute limits)
+        for ch in (s.get("chapters") or [])[:12]:
             chapters.append({
                 "title": ch.get("title", ""),
                 "t": _mmss(ch.get("start", 0)),
                 "start_sec": int(ch.get("start", 0) or 0),
+                "points": (ch.get("bullets") or [])[:4],
             })
         pack["videos"].append({
+            "n": i + 1,  # citation number for [n]
             "bvid": bvid,
             "title": media.get("title") or it.get("title") or "",
             "author": media.get("uploader") or "",
             "duration_min": round((duration or 0) / 60, 1),
             "url": media.get("url") or it.get("url") or _video_url(bvid),
             "tldr": s.get("tldr", ""),
-            "key_points": (s.get("key_points") or [])[:6],
-            "keywords": (s.get("keywords") or [])[:8],
+            "key_points": (s.get("key_points") or [])[:10],
+            "keywords": (s.get("keywords") or [])[:10],
             "chapters": chapters,
         })
     return pack
@@ -116,18 +120,20 @@ def build_evidence(topic: str, summaries: Any) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 _RULES = (
     "严格规则（必须遵守）：\n"
-    "1. 只能使用【证据包】中的内容。禁止引入证据包之外的任何事实、数字、模型名或观点。\n"
-    "2. 每一条具体论断后都必须标注来源视频，格式〔BVxxxx〕；多个视频支持就并列，"
-    "如〔BV1JLN2z4EZQ；BV1pSpWz2ES5〕。\n"
-    "3. 概览可综合多个视频，但其中每个具体说法仍须可被某个视频支撑。\n"
-    "4. 若某观点只有一个视频提出（尤其与其它视频相左），必须明确标为少数/异见观点并注明视频。\n"
+    "1. 只能使用【证据包】中的内容，禁止引入证据包之外的任何事实、数字、模型名或观点。\n"
+    "2. 引用来源时，在论断后用**方括号数字**标注，数字 = 证据包中视频的 n（编号），"
+    "多个来源连写，如 [1] 或 [1][3]。【绝对不要】输出 BV 号或视频标题作为引用记号，只用 [n]。\n"
+    "3. 概览与各段要写成**连贯、自然的中文叙述**，信息充分、具体（包含关键概念/方法/数字/工具名），"
+    "不要罗列式堆砌、不要过度简略；但每个具体说法仍须有 [n] 支撑。\n"
+    "4. 若某观点只有一个视频提出（尤其与其它视频相左），明确点出是少数/异见观点并注明 [n] 与分歧所在。\n"
     "5. 不要编造时间戳；时间戳只能取自证据包 chapters 的 t/start_sec。\n"
-    "6. 用简体中文输出。\n"
+    "6. 用简体中文。宁可详实，不要泛泛而谈。\n"
 )
 
 _SYSTEM = (
-    "你是一名严谨的研究助理，负责把同一主题下多个B站视频的逐条要点汇总成一份"
-    "可信、可追溯、对研究者真正有用的报告。绝不臆造，绝不超出给定证据。"
+    "你是一名严谨且擅长写作的研究助理，负责把同一主题下多个B站视频的逐条要点汇总成一份"
+    "可信、可追溯、信息密度高、对研究者真正有用的中文报告。绝不臆造，绝不超出给定证据，"
+    "同时尽量写得充实、有条理、可读性强。"
 )
 
 
@@ -136,24 +142,26 @@ def build_synth_prompt(topic: str, evidence: Dict[str, Any]) -> Dict[str, str]:
     ev_str = json.dumps(evidence, ensure_ascii=False)
     user = (
         f"主题：《{topic}》\n\n"
-        "下面是该主题下若干视频的逐条要点【证据包】（JSON）：\n"
+        "下面是该主题下若干视频的逐条要点【证据包】（JSON，每个视频带编号 n、bvid、标题、要点、章节）：\n"
         f"{ev_str}\n\n"
         + _RULES +
         "\n请只输出一个 JSON 对象（不要解释、不要代码围栏），结构如下：\n"
         "{\n"
-        '  "overview": "5-7句话总览：该主题整体图景 + 这批视频覆盖范围",\n'
-        '  "themes": [ {"title":"子主题","summary":"各视频在此子主题讲了什么（带〔BV〕）",'
+        '  "overview": "一段 8-12 句、信息充分的总览：主题的整体图景、这批视频的主要结论与分歧、'
+        '覆盖的范围与深度；要具体到关键概念/方法/工具，并用 [n] 标注来源。",\n'
+        '  "themes": [ {"title":"子主题",'
+        '"summary":"用 2-4 句把各视频在此子主题下讲了什么、异同与关键细节写清楚（带 [n]）",'
         '"video_bvids":["BV..."]} ],\n'
-        '  "consensus": ["多个视频一致认同的结论，每条带〔BV；BV〕"],\n'
-        '  "disagreements": ["分歧或单一视频的异见，写清谁的观点〔BV〕及与谁/与主流的差异"],\n'
+        '  "consensus": ["多个视频一致认同的结论，写具体，每条带 [n][n]"],\n'
+        '  "disagreements": ["分歧或单一视频的异见：写清谁的观点 [n]、与谁/与主流如何不同"],\n'
         '  "per_video": [ {"bvid":"BV...","title":"...","url":"...",'
-        '"highlights":["最值得记住的2-3点"],'
+        '"highlights":["该视频最有价值的 3-5 点，具体一些"],'
         '"timestamps":[{"t":"mm:ss","start_sec":int,"label":"该处讲了什么"}]} ],\n'
-        '  "watch_list": [ {"bvid":"BV...","title":"...","rank":1,"reason":"为何先看/适合谁"} ],\n'
-        '  "gaps": ["这批视频未覆盖、但研究该主题应了解的方面"]\n'
+        '  "watch_list": [ {"bvid":"BV...","title":"...","rank":1,"reason":"为何按此顺序看/适合谁"} ],\n'
+        '  "gaps": ["这批视频未覆盖、但研究该主题应了解的方面，写出 3-5 条"]\n'
         "}\n"
-        "themes 取 3-5 个；per_video 覆盖全部视频，每个挑 2-3 个最有信息量的时间戳；"
-        "watch_list 给出全部视频的推荐顺序与理由。"
+        "themes 取 4-6 个；per_video 覆盖全部视频，每个挑 2-3 个最有信息量的时间戳；"
+        "watch_list 给出全部视频的推荐顺序与理由。整体宁详勿略。"
     )
     return {"system": _SYSTEM, "user": user}
 

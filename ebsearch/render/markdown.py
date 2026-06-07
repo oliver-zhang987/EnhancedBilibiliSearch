@@ -10,6 +10,7 @@ claim stays attributable in the rendered output.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from ..models import TopicReport
@@ -17,6 +18,17 @@ from ..models import TopicReport
 
 def _video_url(bvid: str) -> str:
     return f"https://www.bilibili.com/video/{bvid}"
+
+
+def _cite(text: str, sources: List[Dict[str, Any]]) -> str:
+    """Turn [n] citation markers into markdown links to source n's video."""
+    def repl(m):
+        n = int(m.group(1))
+        if 1 <= n <= len(sources):
+            s = sources[n - 1]
+            return f"[[{n}]]({s.get('url') or _video_url(s.get('bvid', ''))})"
+        return m.group(0)
+    return re.sub(r"\[(\d+)\]", repl, text or "")
 
 
 def _ts_link(bvid: str, start_sec: int, label: str = "") -> str:
@@ -63,6 +75,7 @@ def _coverage_matrix(report: TopicReport, src: Dict[str, Dict[str, Any]]) -> Lis
 
 def render_markdown(report: TopicReport, *, include_matrix: bool = True) -> str:
     src = _src_index(report)
+    sources = report.sources or []
     out: List[str] = []
 
     out.append(f"# {report.topic} — 多视频综合报告")
@@ -72,7 +85,7 @@ def render_markdown(report: TopicReport, *, include_matrix: bool = True) -> str:
 
     # ---- Overview ----
     if report.overview:
-        out += ["## 概览", "", report.overview, ""]
+        out += ["## 概览", "", _cite(report.overview, sources), ""]
 
     # ---- Themes ----
     if report.themes:
@@ -85,17 +98,17 @@ def render_markdown(report: TopicReport, *, include_matrix: bool = True) -> str:
                 links = ", ".join(f"[{src.get(b, {}).get('author') or b}]({_video_url(b)})"
                                   for b in covers)
                 tag = f"  \n  <sub>覆盖：{links}</sub>"
-            out.append(f"- **{title}** — {th.get('summary', '')}{tag}")
+            out.append(f"- **{title}** — {_cite(th.get('summary', ''), sources)}{tag}")
         out.append("")
 
     # ---- Consensus vs disagreements ----
     if report.consensus:
         out += ["## 共识", ""]
-        out += [f"- {c}" for c in report.consensus]
+        out += [f"- {_cite(c, sources)}" for c in report.consensus]
         out.append("")
     if report.disagreements:
         out += ["## 分歧与异见", ""]
-        out += [f"- {d}" for d in report.disagreements]
+        out += [f"- {_cite(d, sources)}" for d in report.disagreements]
         out.append("")
 
     # ---- Coverage matrix ----
@@ -139,7 +152,7 @@ def render_markdown(report: TopicReport, *, include_matrix: bool = True) -> str:
     # ---- Gaps ----
     if report.gaps:
         out += ["## 尚未覆盖 / 值得补充", ""]
-        out += [f"- {g}" for g in report.gaps]
+        out += [f"- {_cite(g, sources)}" for g in report.gaps]
         out.append("")
 
     # ---- Sources ----
