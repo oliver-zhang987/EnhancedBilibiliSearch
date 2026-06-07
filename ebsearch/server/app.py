@@ -34,6 +34,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from ..account import balance as _credits_balance
+from ..account import build_auth_router as _build_auth_router
+from ..account import cost_report as _cost_report
+from ..account import deduct as _credits_deduct
+from ..account import init_db as _account_init_db
+from ..account import refund as _credits_refund
+from ..account import require_user as _require_user
 from ..config import Config
 from ..pipeline import research
 
@@ -50,12 +57,16 @@ _INDEX_HTML = _WEB_DIR / "index.html"
 class _Job:
     """A single research run. Mutated from the worker thread, read by the API."""
 
-    __slots__ = ("id", "topic", "owner", "status", "progress", "result", "error", "_lock")
+    __slots__ = ("id", "topic", "owner", "user_id", "charged",
+                 "status", "progress", "result", "error", "_lock")
 
-    def __init__(self, job_id: str, topic: str, owner: str = "_shared") -> None:
+    def __init__(self, job_id: str, topic: str, owner: str = "_shared",
+                 user_id: Optional[int] = None, charged: int = 0) -> None:
         self.id = job_id
         self.topic = topic
-        self.owner = owner               # per-client history partition
+        self.owner = owner               # per-user history partition (str(user_id))
+        self.user_id = user_id           # who to bill/refund
+        self.charged = int(charged)      # credits pre-authorized for this run
         self.status = "pending"          # pending | running | done | error
         self.progress: List[str] = []
         self.result: Optional[Dict[str, Any]] = None
@@ -171,11 +182,22 @@ def _run_job(job: _Job, overrides: Dict[str, Any]) -> None:
             "完成：%d 候选 → %d 入选 → %d 摘要"
             % (res.n_candidates, res.n_selected, res.n_summarized)
         )
+        # Empty report produced nothing useful → refund (fair billing).
+        if res.n_summarized == 0 and job.user_id is not None and job.charged > 0:
+            _credits_refund(job.user_id, job.charged, "empty report refund", job.id)
+            job.charged = 0
         _hist_save(job, job.result)
         job.status = "done"
     except Exception as e:  # surface to the client; keep the server alive
         job.error = "%s: %s" % (type(e).__name__, e)
         job.log("出错：%s" % job.error)
+        # Refund the pre-authorized credits on failure.
+        if job.user_id is not None and job.charged > 0:
+            try:
+                _credits_refund(job.user_id, job.charged, "report failed refund", job.id)
+                job.charged = 0
+            except Exception:
+                pass
         job.status = "error"
 
 
@@ -219,6 +241,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Account subsystem: same users.db + JWT secret as the AIVideoSummary backend,
+    # so one login works across both products. Mounted at /api/auth/*.
+    try:
+        _account_init_db()
+        app.include_router(_build_auth_router(), prefix="/api")
+    except Exception as exc:  # pragma: no cover
+        import logging
+        logging.getLogger("ebsearch.server").warning("account subsystem unavailable: %s", exc)
+
     @app.get("/")
     def index() -> Any:
         if _INDEX_HTML.is_file():
@@ -229,14 +260,25 @@ def create_app() -> FastAPI:
     def health() -> Dict[str, bool]:
         return {"ok": True}
 
-    @app.post("/api/research", status_code=202, dependencies=[Depends(_require_api_key)])
+    @app.post("/api/research", status_code=202)
     def start_research(req: ResearchRequest,
-                       x_client_id: Optional[str] = Header(default=None)) -> Dict[str, str]:
+                       user_id: int = Depends(_require_user)) -> Dict[str, str]:
         topic = (req.topic or "").strip()
         if not topic:
             raise HTTPException(status_code=400, detail="topic is required")
+        # Credit gate: charge the report up front (base + per-video + pro-synth extra),
+        # refunded on failure / empty result by _run_job.
+        cfg = Config.from_env()
+        n_videos = req.max_videos if req.max_videos else getattr(cfg, "max_videos", 4)
+        cost = _cost_report(int(n_videos), getattr(cfg, "synth_model", None))
         job_id = uuid.uuid4().hex
-        job = _Job(job_id, topic, _owner_id(x_client_id))
+        if not _credits_deduct(user_id, cost, "report preauth", job_id):
+            raise HTTPException(
+                status_code=402,
+                detail={"error": "insufficient_credits",
+                        "balance": _credits_balance(user_id), "required": cost},
+            )
+        job = _Job(job_id, topic, owner=str(user_id), user_id=user_id, charged=cost)
         _JOBS[job_id] = job
         overrides = {
             "max_videos": req.max_videos,
@@ -249,33 +291,33 @@ def create_app() -> FastAPI:
         _EXECUTOR.submit(_run_job, job, overrides)
         return {"job_id": job_id}
 
-    @app.get("/api/research/{job_id}", dependencies=[Depends(_require_api_key)])
-    def get_research(job_id: str, x_client_id: Optional[str] = Header(default=None)) -> Any:
+    @app.get("/api/research/{job_id}")
+    def get_research(job_id: str, user_id: int = Depends(_require_user)) -> Any:
         job = _JOBS.get(job_id)
-        # Only the client that started a job may poll it.
-        if job is None or job.owner != _owner_id(x_client_id):
+        # Only the user that started a job may poll it.
+        if job is None or job.owner != str(user_id):
             raise HTTPException(status_code=404, detail="unknown job_id")
         return JSONResponse(job.snapshot())
 
-    @app.get("/api/history", dependencies=[Depends(_require_api_key)])
-    def history_list(x_client_id: Optional[str] = Header(default=None)) -> Any:
+    @app.get("/api/history")
+    def history_list(user_id: int = Depends(_require_user)) -> Any:
         with _HIST_LOCK:
-            return JSONResponse(_load_index(_owner_id(x_client_id)))
+            return JSONResponse(_load_index(str(user_id)))
 
-    @app.get("/api/history/{rec_id}", dependencies=[Depends(_require_api_key)])
-    def history_get(rec_id: str, x_client_id: Optional[str] = Header(default=None)) -> Any:
+    @app.get("/api/history/{rec_id}")
+    def history_get(rec_id: str, user_id: int = Depends(_require_user)) -> Any:
         if not _ID_RE.match(rec_id):
             raise HTTPException(status_code=404, detail="not found")
-        p = _owner_dir(_owner_id(x_client_id)) / (rec_id + ".json")
+        p = _owner_dir(str(user_id)) / (rec_id + ".json")
         if not p.is_file():
             raise HTTPException(status_code=404, detail="not found")
         return JSONResponse(json.loads(p.read_text(encoding="utf-8")))
 
-    @app.delete("/api/history/{rec_id}", dependencies=[Depends(_require_api_key)])
-    def history_delete(rec_id: str, x_client_id: Optional[str] = Header(default=None)) -> Dict[str, bool]:
+    @app.delete("/api/history/{rec_id}")
+    def history_delete(rec_id: str, user_id: int = Depends(_require_user)) -> Dict[str, bool]:
         if not _ID_RE.match(rec_id):
             raise HTTPException(status_code=404, detail="not found")
-        owner = _owner_id(x_client_id)
+        owner = str(user_id)
         with _HIST_LOCK:
             d = _owner_dir(owner)
             if d.is_dir():  # nothing to do if this client has no history

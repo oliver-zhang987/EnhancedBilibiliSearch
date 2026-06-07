@@ -35,8 +35,10 @@ docker rm -f ebsearch 2>/dev/null || true
 mkdir -p /opt/ebsearch/data
 docker run -d --name ebsearch --restart unless-stopped --network host -m 300m \
   --env-file /opt/ebsearch/.env \
+  --env-file /opt/auth/auth.env \
   -v /opt/videosummary/cookies.txt:/app/cookies.txt:ro \
   -v /opt/ebsearch/data:/app/data \
+  -v /opt/auth:/app/db \
   ebsearch:latest >/dev/null
 sleep 5
 echo "=== container ==="; docker ps --filter name=ebsearch --format '{{.Names}} {{.Status}}'

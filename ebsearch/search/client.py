@@ -47,15 +47,24 @@ def _norm_url(u: str) -> str:
 
 
 def _pick_sub(subs: list):
-    """Pick the best subtitle URL (zh-Hans > ai-zh > zh-CN > zh > first)."""
-    for lan in _SUB_PREF:
-        for s in subs:
-            if s.get("lan") == lan and s.get("subtitle_url"):
-                return _norm_url(s["subtitle_url"])
-    for s in subs:
-        if s.get("subtitle_url"):
-            return _norm_url(s["subtitle_url"])
-    return None
+    """Return (subtitle_url, is_ai). Human subtitles are preferred over B站's AI
+    auto-captions (lan starting with 'ai-'); (None, False) when there's none."""
+    def _best(cands, prefs):
+        for lan in prefs:
+            for s in cands:
+                if s.get("lan") == lan:
+                    return _norm_url(s["subtitle_url"])
+        return _norm_url(cands[0]["subtitle_url"]) if cands else None
+
+    human = [s for s in subs if s.get("subtitle_url")
+             and not str(s.get("lan", "")).startswith("ai-")]
+    ai = [s for s in subs if s.get("subtitle_url")
+          and str(s.get("lan", "")).startswith("ai-")]
+    h = _best(human, ["zh-Hans", "zh-CN", "zh"])
+    if h:
+        return h, False
+    a = _best(ai, ["ai-zh"])
+    return (a, True) if a else (None, False)
 
 
 def _parse_duration(s) -> int:
@@ -209,8 +218,9 @@ class BilibiliSearchClient:
 
     def fetch_subtitle(self, bvid: str):
         """Fetch CC/AI subtitles for *bvid* via the WBI player API (light: a few API
-        calls, no media download). Returns (segments, media_dict); segments may be []
-        when the video has no usable subtitle. Raises on network errors."""
+        calls, no media download). Returns (segments, media_dict, kind) where kind is
+        'human' | 'ai' | 'none' so the caller can prefer ASR over low-quality AI
+        captions. Raises on network errors."""
         v = self._get_json(_VIEW + "?bvid=" + bvid)
         data = (v.get("data") or {}) if v.get("code") == 0 else {}
         cid = data.get("cid") or ((data.get("pages") or [{}])[0] or {}).get("cid")
@@ -224,12 +234,12 @@ class BilibiliSearchClient:
             "language": "zh", "tags": [],
         }
         if not cid:
-            return [], media
+            return [], media, "none"
         params = self._sign({"bvid": bvid, "cid": cid})
         purl = _PLAYER + "?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
         p = self._get_json(purl)
         subs = (((p.get("data") or {}).get("subtitle") or {}).get("subtitles")) or []
-        suburl = _pick_sub(subs)
+        suburl, is_ai = _pick_sub(subs)
         if not suburl:
-            return [], media
-        return self._download_subtitle(suburl), media
+            return [], media, "none"
+        return self._download_subtitle(suburl), media, ("ai" if is_ai else "human")

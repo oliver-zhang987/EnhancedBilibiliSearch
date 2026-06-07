@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from . import llm
+from .classify.query import classify_query
 from .config import Config
 from .models import ScoredHit, TopicReport, VideoHit, VideoSummary
 from .rank.select import select
@@ -54,9 +55,12 @@ def research(topic: str, cfg: Optional[Config] = None, *, logger=None) -> Resear
     ok = [s for s in summaries if s.ok]
     log("summarize: %d/%d ok" % (len(ok), len(summaries)))
 
-    # 4) synthesize (one strong-model call) + render
+    # 4) classify the topic to pick an adaptive report shape (cheap/offline-safe),
+    #    then synthesize (one strong-model call) + render in that shape.
+    report_type = classify_query(topic, llm_call=llm.expand_caller(cfg))
+    log("classify: report_type=%s" % report_type)
     report = synthesize(topic, [s.to_dict() for s in ok], cfg,
-                        llm_call=llm.synth_caller(cfg))
+                        llm_call=llm.synth_caller(cfg), report_type=report_type)
     md = render_markdown(report)
 
     return ResearchResult(

@@ -4,15 +4,17 @@ We call the deployed backend's ``POST /api/jobs`` (type=url) and poll. This inhe
 backend's Bilibili cookies, ASR relay, and content-addressed cache (re-running a topic
 or a previously-seen video is then free). Stdlib only.
 
-Cost note: a url job is subtitle-first and only falls back to ASR when a video has no
-subtitle. `cfg.allow_asr` is recorded for intent; strict no-ASR enforcement would need a
-backend flag (TODO) — for now the duration filter + selection are the main cost gates.
+Subtitle policy (cfg.allow_asr): human subtitles are always used (free + best). When
+allow_asr is on, videos with only AI captions are re-transcribed via a `force_asr` url
+job (the backend skips its subtitle-first path and runs Whisper). When off, AI captions
+are reused as-is. The duration filter + selection remain the main cost gates.
 """
 from __future__ import annotations
 
 import json
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
 from ..models import ScoredHit, VideoSummary
@@ -43,43 +45,68 @@ def summarize_selected(
     poll_interval: float = 6.0,
     per_video_timeout: float = 420.0,
     fetch_delay: float = 1.0,
+    submit_workers: int = 4,
     logger=None,
 ) -> List[VideoSummary]:
     """Summarize each selected hit via the backend. Submits all jobs, then polls.
 
     To avoid Bilibili risk-control (HTTP 412) from the backend's per-video yt-dlp
-    download, we fetch each video's subtitle here (light WBI API calls, throttled) and
-    submit a `transcript` job; only videos with no subtitle fall back to a `url` (ASR)
-    job, and only when cfg.allow_asr is set. Returns a VideoSummary per input.
+    download, we fetch each video's subtitle here (light WBI API calls) and submit a
+    `transcript` job; only videos with no subtitle fall back to a `url` (ASR) job, and
+    only when cfg.allow_asr is set. Subtitle-fetch + submission run concurrently across
+    videos (capped pool), and polling starts fast then backs off, so the wall-clock is
+    dominated by the slowest single video rather than the sum. Returns one VideoSummary
+    per input.
     """
     base = cfg.backend_url.rstrip("/")
     key = cfg.backend_api_key
     log = logger or (lambda *a, **k: None)
+    allow_asr = getattr(cfg, "allow_asr", False)
 
-    # 1) submit — subtitle -> transcript job; else (opt-in) ASR url job
-    jobs: Dict[str, dict] = {}   # bvid -> {hit, job_id, error}
-    for sh in selected:
+    # 1) submit — subtitle -> transcript job; else (opt-in) ASR url job.
+    # Fetch + submit run in parallel across videos (the old serial 1s-per-video loop
+    # was pure latency). The pool is capped to stay gentle on Bilibili's WBI endpoint.
+    def _submit_one(sh: ScoredHit):
         hit = sh.hit
-        segs, media = None, None
+        segs, media, kind = [], None, "none"   # kind: human | ai | none
         if client is not None:
             try:
-                segs, media = client.fetch_subtitle(hit.bvid)
+                segs, media, kind = client.fetch_subtitle(hit.bvid)
             except Exception as e:
                 log("subtitle fetch failed %s: %s" % (hit.bvid, e))
-                segs = None
+                segs, kind = [], "none"
         try:
-            if segs:
-                body = {"type": "transcript", "media": media, "segments": segs}
-                resp = _post("%s/api/jobs" % base, body, key)
-                jobs[hit.bvid] = {"hit": hit, "job_id": resp.get("job_id"), "error": None}
-            elif getattr(cfg, "allow_asr", False):
-                resp = _post("%s/api/jobs" % base, {"type": "url", "url": hit.url}, key)
-                jobs[hit.bvid] = {"hit": hit, "job_id": resp.get("job_id"), "error": None}
+            if kind == "human" and segs:
+                # human subtitle: best quality + free, always use it
+                resp = _post("%s/api/jobs" % base,
+                             {"type": "transcript", "media": media, "segments": segs}, key)
+                return hit.bvid, {"hit": hit, "job_id": resp.get("job_id"), "error": None}
+            elif allow_asr:
+                # only AI captions (or none): re-transcribe with whisper for quality
+                # (force_asr makes the backend skip subtitles instead of reusing them)
+                resp = _post("%s/api/jobs" % base,
+                             {"type": "url", "url": hit.url, "force_asr": True}, key)
+                return hit.bvid, {"hit": hit, "job_id": resp.get("job_id"), "error": None}
+            elif segs:
+                # AI captions, ASR off: use them rather than nothing
+                resp = _post("%s/api/jobs" % base,
+                             {"type": "transcript", "media": media, "segments": segs}, key)
+                return hit.bvid, {"hit": hit, "job_id": resp.get("job_id"), "error": None}
             else:
-                jobs[hit.bvid] = {"hit": hit, "job_id": None, "error": "无字幕（未开启ASR）"}
+                return hit.bvid, {"hit": hit, "job_id": None, "error": "无字幕（未开启ASR）"}
         except Exception as e:
-            jobs[hit.bvid] = {"hit": hit, "job_id": None, "error": "submit:%s" % e}
-        time.sleep(fetch_delay)  # be gentle on Bilibili between videos
+            return hit.bvid, {"hit": hit, "job_id": None, "error": "submit:%s" % e}
+
+    jobs: Dict[str, dict] = {}   # bvid -> {hit, job_id, error}
+    workers = max(1, min(submit_workers, len(selected) or 1))
+    if workers == 1 or len(selected) <= 1:
+        for sh in selected:
+            bv, info = _submit_one(sh)
+            jobs[bv] = info
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for bv, info in pool.map(_submit_one, selected):
+                jobs[bv] = info
 
     # 2) poll outstanding until done/error or timeout
     results: Dict[str, VideoSummary] = {}
@@ -92,8 +119,12 @@ def summarize_selected(
             results[bv] = VideoSummary(bvid=bv, title=h.title, url=h.url,
                                        ok=False, error=j["error"])
 
+    round_i = 0
     while pending and time.time() < deadline:
-        time.sleep(poll_interval)
+        # adaptive cadence: poll quickly at first (cache hits finish in seconds),
+        # then settle to poll_interval to avoid hammering the backend.
+        time.sleep(1.0 if round_i < 3 else (3.0 if round_i < 6 else poll_interval))
+        round_i += 1
         for bv in list(pending):
             j = jobs[bv]
             try:

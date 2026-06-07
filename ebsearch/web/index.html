@@ -499,6 +499,108 @@
   table.matrix .no { color: var(--faint); }
   table.matrix tr:last-child td { border-bottom: none; }
 
+  /* ====================================================================== *
+   * adaptive, per-report-type presentation. Each `.report--{type}` block
+   * tunes layout/emphasis; the type-specific sections below are fluid and
+   * fill their content column at every viewport width (no narrow strips).
+   * ====================================================================== */
+  .report-meta .type-pill { background: var(--pink-soft); border-color: color-mix(in srgb, var(--pink) 35%, transparent); }
+  .report-meta .type-pill b { color: var(--pink-d); }
+
+  /* ---- how_to: numbered vertical stepper ---- */
+  .stepper-v { list-style: none; margin: 4px 0 0; padding: 0; position: relative; }
+  .step-v { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; position: relative; padding-bottom: 16px; }
+  .step-v:last-child { padding-bottom: 0; }
+  /* the connecting rail runs through the number column */
+  .step-v::before {
+    content: ""; position: absolute; left: 16px; top: 34px; bottom: -2px; width: 2px;
+    background: linear-gradient(var(--pink) 0%, var(--line) 100%);
+  }
+  .step-v:last-child::before { display: none; }
+  .step-v .step-num {
+    width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; z-index: 1;
+    background: linear-gradient(135deg, var(--pink), var(--pink-d)); color: #fff; font-weight: 800; font-size: 14px;
+    box-shadow: 0 2px 8px rgba(251,114,153,.4);
+  }
+  .step-v .step-card {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 15px; min-width: 0;
+  }
+  .step-v .step-t { font-weight: 700; font-size: 14.5px; margin-bottom: 4px; }
+  .step-v .step-d { color: var(--ink-2); line-height: 1.65; }
+  .step-v .step-ts { margin-top: 9px; }
+
+  /* ---- news: vertical timeline ---- */
+  .timeline { list-style: none; margin: 4px 0 0; padding: 0 0 0 4px; position: relative; }
+  .tl-item { position: relative; padding: 0 0 18px 26px; }
+  .tl-item:last-child { padding-bottom: 0; }
+  .tl-item::before {
+    content: ""; position: absolute; left: 5px; top: 14px; bottom: -4px; width: 2px; background: var(--line);
+  }
+  .tl-item:last-child::before { display: none; }
+  .tl-item .tl-dot {
+    position: absolute; left: 0; top: 5px; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--card); border: 3px solid var(--warn); z-index: 1;
+  }
+  .tl-card { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 11px 15px; min-width: 0; }
+  .tl-card .tl-date {
+    display: inline-block; font-weight: 800; font-size: 12.5px; color: var(--warn);
+    background: var(--warn-soft); border-radius: 6px; padding: 2px 9px; margin-bottom: 6px;
+  }
+  .tl-card .tl-event { color: var(--ink-2); line-height: 1.65; }
+  .tl-card .tl-srcs { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* ---- comparison: a styled, sticky-first-column table that fills the column ---- */
+  .cmp-scroll { overflow-x: auto; border-radius: 12px; border: 1px solid var(--line); -webkit-overflow-scrolling: touch; }
+  table.cmp-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13.5px; min-width: max-content; }
+  table.cmp-table th, table.cmp-table td {
+    border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
+    padding: 11px 14px; text-align: left; vertical-align: top; line-height: 1.55;
+  }
+  table.cmp-table thead th {
+    background: var(--accent2-soft); color: var(--accent2); font-weight: 700; white-space: nowrap;
+    position: sticky; top: 0; z-index: 2;
+  }
+  table.cmp-table thead th:first-child { z-index: 3; }
+  table.cmp-table th.opt-name, table.cmp-table thead th:first-child {
+    position: sticky; left: 0; background: var(--card); font-weight: 700; color: var(--ink); white-space: nowrap;
+  }
+  table.cmp-table thead th:first-child { background: var(--accent2-soft); }
+  table.cmp-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--line-2) 50%, transparent); }
+  table.cmp-table tbody tr:hover td { background: var(--pink-soft); }
+  table.cmp-table tr:last-child th, table.cmp-table tr:last-child td { border-bottom: none; }
+  table.cmp-table .cmp-na { color: var(--faint); }
+  /* a comparison report leans on the table, so give it a wider TOC + roomier prose */
+  .report--comparison { --toc-w: clamp(200px, 14vw, 240px); }
+
+  /* ---- concept: glossary / definition list ---- */
+  dl.glossary { margin: 4px 0 0; display: grid; gap: 0; }
+  dl.glossary dt {
+    font-weight: 800; font-size: 14.5px; color: var(--ink); margin-top: 12px;
+    padding-left: 12px; border-left: 3px solid var(--pink);
+  }
+  dl.glossary dt:first-child { margin-top: 0; }
+  dl.glossary dd { margin: 5px 0 0 15px; color: var(--ink-2); line-height: 1.7; }
+
+  /* ---- review: pro/con verdict cards ---- */
+  .verdict-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 14px; margin-top: 4px; }
+  .verdict-card { border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px; background: var(--bg); min-width: 0; }
+  .verdict-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 11px; }
+  .verdict-head .verdict-subj { font-weight: 800; font-size: 15.5px; }
+  .verdict-head .verdict-rating {
+    flex: none; font-weight: 800; font-size: 13px; color: #fff; padding: 3px 11px; border-radius: 999px;
+    background: linear-gradient(135deg, var(--pink), var(--pink-d)); white-space: nowrap;
+  }
+  .verdict-card .proscons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .verdict-card .proscons h4 { margin: 0 0 6px; font-size: 12.5px; font-weight: 700; display: flex; align-items: center; gap: 5px; }
+  .verdict-card .pros h4 { color: var(--ok); } .verdict-card .pros h4::before { content: "✓"; }
+  .verdict-card .cons h4 { color: var(--err); } .verdict-card .cons h4::before { content: "✕"; }
+  .verdict-card .pros { border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent); background: var(--ok-soft); border-radius: 10px; padding: 10px 12px; }
+  .verdict-card .cons { border: 1px solid color-mix(in srgb, var(--err) 25%, transparent); background: var(--err-soft); border-radius: 10px; padding: 10px 12px; }
+  .verdict-card .proscons ul { margin: 0; padding-left: 17px; }
+  .verdict-card .proscons li { margin: 4px 0; line-height: 1.55; color: var(--ink-2); font-size: 13px; }
+  .verdict-card .pc-none { margin: 0; color: var(--faint); }
+  .verdict-card .verdict-foot { margin-top: 11px; padding-top: 9px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); }
+
   /* sources */
   .source-card {
     display: flex; gap: 11px; align-items: flex-start; padding: 11px 13px; border: 1px solid var(--line);
@@ -575,6 +677,7 @@
     .hero h1 { font-size: 24px; }
     .opt-grid { grid-template-columns: 1fr; }
     .cd-grid { grid-template-columns: 1fr; }
+    .verdict-card .proscons { grid-template-columns: 1fr; }
     .composer-row { flex-wrap: wrap; }
     .go-btn { width: 100%; justify-content: center; }
   }
@@ -620,6 +723,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       </button>
       <span class="tb-title">B站主题研究</span>
+      <div class="tb-account" id="tbAccount"></div>
     </div>
 
     <div class="scroll">
@@ -668,7 +772,7 @@
           </div>
 
           <div class="chips">
-            <label class="chip"><input id="allowAsr" type="checkbox" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>语音转写 (ASR)</label>
+            <label class="chip"><input id="allowAsr" type="checkbox" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>语音识别替代AI字幕（更准·较慢）</label>
             <label class="chip"><input id="queryExpand" type="checkbox" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>LLM 查询扩展</label>
             <label class="chip"><input id="querySuggest" type="checkbox" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>B站搜索建议</label>
             <label class="chip"><input id="rerank" type="checkbox" /><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>LLM 候选重排</label>
@@ -741,6 +845,94 @@
   </main>
 </div>
 
+<style>
+  .tb-account{margin-left:auto;display:flex;align-items:center;gap:8px;position:relative}
+  .acct-login,.acct-btn{font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;border:1px solid var(--border,#33334a);background:var(--card,#1c1c28);color:var(--text,#eee);cursor:pointer}
+  .acct-login{background:linear-gradient(135deg,#6d5efc,#9b5efc);border:none;color:#fff;font-weight:600}
+  .acct-credits{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:600;color:#ffb84a;cursor:pointer;padding:5px 9px;border-radius:999px;background:rgba(255,184,74,.12)}
+  .acct-menu{position:absolute;top:44px;right:0;background:var(--card,#1c1c28);border:1px solid var(--border,#33334a);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);display:flex;flex-direction:column;min-width:132px;z-index:60;overflow:hidden}
+  .acct-menu button{font:inherit;font-size:13px;text-align:left;padding:10px 14px;background:none;border:none;color:var(--text,#eee);cursor:pointer}
+  .acct-menu button:hover{background:rgba(127,127,160,.14)}
+  .modal-overlay{position:fixed;inset:0;background:rgba(8,8,16,.62);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
+  .modal-overlay[hidden]{display:none}
+  .modal-card{width:100%;max-width:404px;background:var(--card,#1c1c28);border:1px solid var(--border,#33334a);border-radius:18px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:popIn .18s ease}
+  @keyframes popIn{from{transform:translateY(8px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+  .modal-card h2{margin:0 0 4px;font-size:20px}
+  .modal-sub{color:var(--faint,#9a9ab0);font-size:13px;margin-bottom:18px}
+  .auth-tabs{display:flex;gap:6px;margin-bottom:18px;background:rgba(127,127,160,.12);border-radius:10px;padding:4px}
+  .auth-tabs button{flex:1;font:inherit;font-size:14px;padding:8px;border:none;border-radius:8px;background:none;color:var(--faint,#9a9ab0);cursor:pointer;font-weight:600}
+  .auth-tabs button.active{background:var(--accent,#6d5efc);color:#fff}
+  .auth-field{margin-bottom:12px}
+  .auth-field label{display:block;font-size:12px;color:var(--faint,#9a9ab0);margin-bottom:5px}
+  .auth-field input{width:100%;box-sizing:border-box;padding:11px 13px;border-radius:10px;border:1px solid var(--border,#33334a);background:var(--bg,#13131c);color:var(--text,#eee);font:inherit;font-size:14px}
+  .code-row{display:flex;gap:8px}.code-row input{flex:1}
+  #authSendCode{white-space:nowrap;padding:0 14px;border-radius:10px;border:1px solid var(--accent,#6d5efc);background:none;color:var(--accent,#8b7bff);font:inherit;font-size:13px;cursor:pointer}
+  #authSendCode:disabled{opacity:.55;cursor:default}
+  .consent-row{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--faint,#9a9ab0);margin:6px 0 16px;line-height:1.5}
+  .consent-row a{color:var(--accent,#8b7bff)}
+  .auth-submit{width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#6d5efc,#9b5efc);color:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer}
+  .auth-err{color:#ff7a7a;font-size:12.5px;min-height:16px;margin-top:10px;text-align:center}
+  .modal-x{float:right;background:none;border:none;color:var(--faint,#9a9ab0);font-size:22px;cursor:pointer;line-height:1;margin:-6px -6px 0 0}
+  .aigc-note{display:inline-block;font-size:12px;color:var(--faint,#9a9ab0);background:rgba(127,127,160,.1);border:1px solid var(--border,#33334a);border-radius:999px;padding:4px 12px;margin-bottom:12px}
+  .privacy-body{font-size:13px;line-height:1.7;color:var(--text,#ddd);max-height:60vh;overflow:auto}
+  .privacy-body h3{font-size:14px;margin:14px 0 4px}
+</style>
+
+<div class="modal-overlay" id="authModal" hidden>
+  <div class="modal-card">
+    <button class="modal-x" id="authClose" type="button">&times;</button>
+    <h2>欢迎使用 B站主题研究</h2>
+    <div class="modal-sub">手机号 + 邀请码注册，注册即赠送积分</div>
+    <div class="auth-tabs">
+      <button id="authTabLogin" type="button" class="active">登录</button>
+      <button id="authTabReg" type="button">注册</button>
+    </div>
+    <div class="auth-field">
+      <label>手机号</label>
+      <input id="authPhone" type="tel" inputmode="numeric" placeholder="请输入手机号" autocomplete="off" />
+    </div>
+    <div class="auth-field">
+      <label>验证码</label>
+      <div class="code-row">
+        <input id="authCode" type="text" inputmode="numeric" placeholder="6 位验证码" autocomplete="off" />
+        <button id="authSendCode" type="button">发送验证码</button>
+      </div>
+    </div>
+    <div id="regOnly" style="display:none">
+      <div class="auth-field">
+        <label>邀请码</label>
+        <input id="authInvite" type="text" placeholder="请输入邀请码" autocomplete="off" />
+      </div>
+      <label class="consent-row">
+        <input id="authConsent" type="checkbox" />
+        <span>我已阅读并同意 <a href="#" id="authPrivacy">《隐私政策》</a>，同意按 PIPL 规定处理我的手机号（仅以加盐哈希存储，不保存明文）。</span>
+      </label>
+    </div>
+    <button class="auth-submit" id="authSubmit" type="button">登录</button>
+    <div class="auth-err" id="authErr"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="privacyModal" hidden>
+  <div class="modal-card" style="max-width:520px">
+    <button class="modal-x" id="privacyClose" type="button">&times;</button>
+    <h2>隐私政策</h2>
+    <div class="privacy-body">
+      <p>我们重视并保护你的个人信息，遵循《个人信息保护法》(PIPL)。</p>
+      <h3>我们收集什么</h3>
+      <p>手机号（仅以加盐 SHA-256 哈希存储，不保存明文）、邀请码、积分与使用记录。</p>
+      <h3>用途</h3>
+      <p>用于账号注册/登录鉴权、积分计费与防滥用，不用于与此无关的用途。</p>
+      <h3>第三方</h3>
+      <p>验证码经短信服务商发送；摘要/报告由第三方大模型 API 生成（仅传输必要文本）。</p>
+      <h3>你的权利</h3>
+      <p>你可查询、删除你的数据并撤回同意。如需协助请联系站点管理员。</p>
+      <h3>AI 生成内容</h3>
+      <p>本服务输出由 AI 生成，已按规定标注「AI 生成」，可能存在错误，请结合原视频核实。</p>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -776,21 +968,137 @@
   $("menuBtn").addEventListener("click", function () { setDrawer(true); });
   $("backdrop").addEventListener("click", function () { setDrawer(false); });
 
-  // ===================== API key + per-client id =====================
+  // ===================== account (unified login: phone + invite + OTP) =====================
   var storedKey = localStorage.getItem("ebs_api_key") || "";
-  if (storedKey) $("apikey").value = storedKey;
-  // A persistent random id so history is private per browser (the server
-  // partitions stored reports by a hash of this).
-  var clientId = localStorage.getItem("ebs_client_id");
-  if (!clientId) {
-    clientId = "c_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem("ebs_client_id", clientId);
-  }
+  if (storedKey && $("apikey")) $("apikey").value = storedKey;
+  var authToken = localStorage.getItem("ebs_token") || "";
+  var authUser = null;
+  try { authUser = JSON.parse(localStorage.getItem("ebs_user") || "null"); } catch (e) { authUser = null; }
+
   function headers() {
-    var h = { "Content-Type": "application/json", "X-Client-Id": clientId };
-    var k = $("apikey").value.trim();
-    if (k) h["X-API-Key"] = k;
+    var h = { "Content-Type": "application/json" };
+    if (authToken) h["Authorization"] = "Bearer " + authToken;
+    var k = $("apikey") ? $("apikey").value.trim() : "";
+    if (k) h["X-API-Key"] = k;   // advanced / self-host fallback
     return h;
+  }
+  function setAuth(token, user) {
+    authToken = token || ""; authUser = user || null;
+    if (authToken) { localStorage.setItem("ebs_token", authToken); }
+    else { localStorage.removeItem("ebs_token"); }
+    if (authUser) { localStorage.setItem("ebs_user", JSON.stringify(authUser)); }
+    else { localStorage.removeItem("ebs_user"); }
+    renderAccount();
+  }
+
+  // ---- account chip ----
+  function renderAccount() {
+    var box = $("tbAccount"); if (!box) return;
+    if (authToken && authUser) {
+      box.innerHTML =
+        '<span class="acct-credits" id="acctCredits" title="积分余额（点击刷新）">◈ ' +
+        (authUser.credits != null ? authUser.credits : "—") + " 分</span>" +
+        '<button class="acct-btn" id="acctBtn" type="button">尾号 ' + esc(authUser.phone_last4 || "----") + " ▾</button>";
+      $("acctBtn").addEventListener("click", toggleAcctMenu);
+      $("acctCredits").addEventListener("click", function () { refreshMe(true); });
+    } else {
+      box.innerHTML = '<button class="acct-login" id="acctLogin" type="button">登录 / 注册</button>';
+      $("acctLogin").addEventListener("click", function () { openAuth("login"); });
+    }
+  }
+  function toggleAcctMenu() {
+    var ex = document.getElementById("acctMenu");
+    if (ex) { ex.remove(); return; }
+    var m = document.createElement("div");
+    m.id = "acctMenu"; m.className = "acct-menu";
+    m.innerHTML = '<button type="button" data-act="refresh">刷新积分</button>' +
+                  '<button type="button" data-act="logout">退出登录</button>';
+    $("tbAccount").appendChild(m);
+    m.addEventListener("click", function (e) {
+      var act = e.target.getAttribute("data-act");
+      if (act === "refresh") refreshMe(true);
+      if (act === "logout") { setAuth("", null); toast("已退出登录"); }
+      m.remove();
+    });
+    setTimeout(function () {
+      document.addEventListener("click", function once(ev) {
+        if (!m.contains(ev.target) && ev.target.id !== "acctBtn") { m.remove(); document.removeEventListener("click", once); }
+      });
+    }, 0);
+  }
+
+  // ---- auth modal ----
+  var authMode = "login", codeTimer = null;
+  function openAuth(mode) {
+    authMode = mode || "login";
+    $("authModal").hidden = false;
+    setAuthMode(authMode);
+    var p = $("authPhone"); if (p) p.focus();
+  }
+  function closeAuth() { $("authModal").hidden = true; }
+  function setAuthMode(mode) {
+    authMode = mode;
+    $("authTabLogin").classList.toggle("active", mode === "login");
+    $("authTabReg").classList.toggle("active", mode === "register");
+    $("regOnly").style.display = (mode === "register") ? "" : "none";
+    $("authSubmit").textContent = (mode === "register") ? "注册" : "登录";
+    $("authErr").textContent = "";
+  }
+  function authErr(msg) { $("authErr").textContent = msg || ""; }
+  function apiJson(path, method, body) {
+    return fetch(path, {
+      method: method, headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (r) {
+      return r.json().then(
+        function (d) { return { status: r.status, ok: r.ok, data: d }; },
+        function () { return { status: r.status, ok: r.ok, data: {} }; }
+      );
+    });
+  }
+  function doSendCode() {
+    var phone = ($("authPhone").value || "").trim();
+    if (!/^\d{6,15}$/.test(phone)) { authErr("请输入有效的手机号"); return; }
+    var btn = $("authSendCode"); btn.disabled = true;
+    apiJson("/api/auth/send-code", "POST", { phone: phone }).then(function (res) {
+      if (!res.ok) { authErr((res.data && res.data.detail) || "发送失败"); btn.disabled = false; return; }
+      var n = 60; btn.textContent = n + "s";
+      codeTimer = setInterval(function () {
+        n--; if (n <= 0) { clearInterval(codeTimer); btn.disabled = false; btn.textContent = "发送验证码"; }
+        else btn.textContent = n + "s";
+      }, 1000);
+      if (res.data && res.data.debug_code) { $("authCode").value = res.data.debug_code; authErr("（开发模式）验证码已自动填入"); }
+      else toast("验证码已发送");
+    }).catch(function () { authErr("网络错误"); btn.disabled = false; });
+  }
+  function doSubmitAuth() {
+    var phone = ($("authPhone").value || "").trim();
+    var code = ($("authCode").value || "").trim();
+    if (!/^\d{6,15}$/.test(phone)) { authErr("请输入有效的手机号"); return; }
+    if (!code) { authErr("请输入验证码"); return; }
+    if (authMode === "register") {
+      var invite = ($("authInvite").value || "").trim();
+      if (!invite) { authErr("请输入邀请码"); return; }
+      if (!$("authConsent").checked) { authErr("请先勾选并同意隐私政策"); return; }
+      apiJson("/api/auth/register", "POST", { phone: phone, code: code, invite_code: invite, consented: true }).then(handleAuthResp);
+    } else {
+      apiJson("/api/auth/login", "POST", { phone: phone, code: code }).then(handleAuthResp);
+    }
+  }
+  function handleAuthResp(res) {
+    if (!res.ok) { authErr((res.data && res.data.detail) || "操作失败"); return; }
+    setAuth(res.data.token, res.data.user);
+    closeAuth();
+    toast(authMode === "register" ? "注册成功，已赠送积分" : "登录成功");
+  }
+  function refreshMe(notify) {
+    if (!authToken) return;
+    fetch("/api/auth/me", { headers: headers() }).then(function (r) {
+      if (r.status === 401) { setAuth("", null); return null; }
+      return r.ok ? r.json() : null;
+    }).then(function (d) {
+      if (d && d.user) { setAuth(authToken, d.user); if (notify) toast("积分余额：" + d.user.credits + " 分"); }
+    }).catch(function () {});
   }
 
   // ===================== toast =====================
@@ -847,8 +1155,9 @@
   function start() {
     var topic = $("topic").value.trim();
     if (!topic) { $("topic").focus(); toast("请输入一个主题", true); return; }
+    if (!authToken) { openAuth("login"); toast("请先登录后再生成报告", true); return; }
     currentTopic = topic;
-    var key = $("apikey").value.trim();
+    var key = $("apikey") ? $("apikey").value.trim() : "";
     if (key) localStorage.setItem("ebs_api_key", key);
 
     var body = { topic: topic };
@@ -868,10 +1177,16 @@
     fetch("/api/research", { method: "POST", headers: headers(), body: JSON.stringify(body) })
       .then(function (r) {
         if (r.status === 401) {
-          $("apikeyBox").classList.remove("hidden");
-          show("inputView");
-          $("apikey").focus();
-          throw new Error("需要 API Key：请在主题下方填写后重试");
+          setAuth("", null); show("inputView"); openAuth("login");
+          throw new Error("登录已过期，请重新登录");
+        }
+        if (r.status === 402) {
+          return r.json().then(function (d) {
+            var det = (d && d.detail) || {};
+            refreshMe();
+            show("inputView");
+            throw new Error("积分不足（需要 " + (det.required || "?") + "，余额 " + (det.balance != null ? det.balance : "?") + "）。可用邀请码获取更多积分。");
+          });
         }
         if (r.status !== 202 && !r.ok) throw new Error("提交失败 (HTTP " + r.status + ")");
         return r.json();
@@ -893,7 +1208,7 @@
   function poll(jobId) {
     fetch("/api/research/" + jobId, { headers: headers() })
       .then(function (r) {
-        if (r.status === 401) throw new Error("鉴权失败：请检查 API Key");
+        if (r.status === 401) { stop(); setAuth("", null); openAuth("login"); throw new Error("登录已过期，请重新登录"); }
         if (!r.ok) throw new Error("查询失败 (HTTP " + r.status + ")");
         return r.json();
       })
@@ -1058,6 +1373,8 @@
     var title = (rep && rep.topic) ? rep.topic + " — 多视频综合报告" : (currentTopic || "研究报告");
     var srcN = (rep && rep.sources) ? rep.sources.length : (counts && counts.n_summarized) || 0;
     var meta = "";
+    var rtMeta = (rep && rep.report_type && REPORT_TYPE_META[rep.report_type]) || null;
+    if (rtMeta) meta += '<span class="pill type-pill"><b>' + esc(rtMeta.label) + "</b></span>";
     if (rep && rep.generated_at) meta += '<span class="pill">生成于 ' + esc(rep.generated_at) + "</span>";
     if (counts) {
       if (counts.n_candidates != null) meta += '<span class="pill"><b>' + counts.n_candidates + "</b> 候选</span>";
@@ -1066,7 +1383,8 @@
     } else if (srcN) {
       meta += '<span class="pill"><b>' + srcN + "</b> 来源视频</span>";
     }
-    var header = '<h1 class="report-title">' + esc(title) + "</h1>"
+    var header = '<div class="aigc-note">🤖 本报告内容由 <b>AI 生成</b>，可能存在错误，请结合原视频核实</div>'
+      + '<h1 class="report-title">' + esc(title) + "</h1>"
       + (meta ? '<div class="report-meta">' + meta + "</div>" : "");
 
     // ---- structured render when we have a report object; else markdown fallback ----
@@ -1091,12 +1409,23 @@
       });
     }
     var html = header;
+    var rt = (rep.report_type && REPORT_TYPE_META[rep.report_type]) ? rep.report_type : "general";
 
     // overview
     if (rep.overview) {
       html += section("overview", "概览", "overview", "", null,
         '<div class="lede">' + cite(mdToParas(rep.overview)) + "</div>");
     }
+
+    // ---- adaptive lead block: the type-specific section comes right after the
+    //      overview so each report reads like its kind (how-to → steps, news →
+    //      timeline, comparison → table, concept → glossary, review → verdicts).
+    if (rt === "how_to")        html += renderSteps(rep, cite);
+    else if (rt === "news")     html += renderTimeline(rep, srcIdx, cite);
+    else if (rt === "comparison") html += renderComparison(rep);
+    else if (rt === "concept")  html += renderGlossary(rep, cite);
+    else if (rt === "review")   html += renderVerdicts(rep, srcIdx, cite);
+
     // themes
     if ((rep.themes || []).length) {
       var t = rep.themes.map(function (th) {
@@ -1120,9 +1449,12 @@
       body += "</div>";
       html += section("consensus", "共识与分歧", "cd", "green", null, body);
     }
-    // coverage matrix
-    var matrix = buildMatrix(rep, srcIdx);
-    if (matrix) html += section("matrix", "子主题 × 视频 覆盖矩阵", "matrix", "blue", null, matrix);
+    // coverage matrix — suppressed for comparison reports (the dimensions×options
+    // table above already is the at-a-glance grid, so this would be redundant).
+    if (!(rt === "comparison" && rep.comparison && (rep.comparison.options || []).length)) {
+      var matrix = buildMatrix(rep, srcIdx);
+      if (matrix) html += section("matrix", "子主题 × 视频 覆盖矩阵", "matrix", "blue", null, matrix);
+    }
     // per-video
     if ((rep.per_video || []).length) {
       var pv = rep.per_video.map(function (v, i) {
@@ -1184,10 +1516,114 @@
       html += '<div class="cost-foot">合成成本：' + bits.join(" · ") + "</div>";
     }
 
-    box.innerHTML = '<div class="report-body"><div class="content">' + html + "</div>"
+    box.innerHTML = '<div class="report-body report--' + rt + '"><div class="content">' + html + "</div>"
       + '<nav class="toc" id="tocNav"></nav></div>';
     buildToc(true);
     wireSections();
+  }
+
+  // ---- report-type metadata: drives the adaptive container class + meta pill ----
+  var REPORT_TYPE_META = {
+    how_to:     { label: "操作教程" },
+    news:       { label: "事件资讯" },
+    comparison: { label: "横向对比" },
+    concept:    { label: "概念科普" },
+    review:     { label: "测评体验" },
+    general:    { label: "综合报告" }
+  };
+
+  // ---- type-specific block renderers (return a full <section>…</section>) ----
+  // how_to → numbered vertical stepper with clickable [mm:ss] deep-links.
+  function renderSteps(rep, cite) {
+    var steps = rep.steps || [];
+    if (!steps.length) return "";
+    var body = '<ol class="stepper-v">' + steps.map(function (st, i) {
+      var n = st.n || (i + 1);
+      var ts = st.bvid ? '<div class="step-ts">' + tsLink(st.bvid, st.start_sec, "") + "</div>" : "";
+      return '<li class="step-v">'
+        + '<span class="step-num">' + esc(String(n)) + "</span>"
+        + '<div class="step-card">'
+        + (st.title ? '<div class="step-t">' + mdInline(st.title) + "</div>" : "")
+        + (st.detail ? '<div class="step-d">' + cite(mdInline(st.detail)) + "</div>" : "")
+        + ts + "</div></li>";
+    }).join("") + "</ol>";
+    return section("steps", "操作步骤", "watch", "blue", steps.length, body);
+  }
+
+  // news → vertical timeline; each event is a dated node backed by its source videos.
+  function renderTimeline(rep, srcIdx, cite) {
+    var tl = rep.timeline || [];
+    if (!tl.length) return "";
+    var body = '<ol class="timeline">' + tl.map(function (ev) {
+      var bvids = (ev.bvids || []).map(function (b) {
+        var lbl = (srcIdx[b] && (srcIdx[b].author || srcIdx[b].title)) || b;
+        return '<a class="cov-link" href="' + vurl(b) + '" target="_blank" rel="noopener">' + esc(lbl) + "</a>";
+      }).join("");
+      return '<li class="tl-item"><span class="tl-dot"></span>'
+        + '<div class="tl-card">'
+        + (ev.date ? '<div class="tl-date">' + esc(ev.date) + "</div>" : "")
+        + '<div class="tl-event">' + cite(mdInline(ev.event)) + "</div>"
+        + (bvids ? '<div class="tl-srcs">' + bvids + "</div>" : "")
+        + "</div></li>";
+    }).join("") + "</ol>";
+    return section("timeline", "事件时间线", "cd", "amber", tl.length, body);
+  }
+
+  // comparison → a real styled table: options as rows, dimensions as columns.
+  function renderComparison(rep) {
+    var comp = rep.comparison || {};
+    var dims = comp.dimensions || [], options = comp.options || [];
+    if (!dims.length || !options.length) return "";
+    var head = "<thead><tr><th>对象</th>" + dims.map(function (d) {
+      return "<th>" + esc(d) + "</th>";
+    }).join("") + "</tr></thead>";
+    var rows = options.map(function (o) {
+      var cells = o.cells || {};
+      var name = o.bvid
+        ? '<a href="' + vurl(o.bvid) + '" target="_blank" rel="noopener">' + esc(o.name || o.bvid) + "</a>"
+        : esc(o.name || "");
+      return '<tr><th class="opt-name">' + name + "</th>" + dims.map(function (d) {
+        var v = cells[d];
+        return "<td>" + (v != null && v !== "" ? mdInline(String(v)) : '<span class="cmp-na">—</span>') + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    var body = '<div class="cmp-scroll"><table class="cmp-table">' + head + "<tbody>" + rows + "</tbody></table></div>";
+    return section("comparison", "横向对比", "matrix", "blue", options.length, body);
+  }
+
+  // concept → a definition list / glossary.
+  function renderGlossary(rep, cite) {
+    var gl = rep.glossary || [];
+    if (!gl.length) return "";
+    var body = '<dl class="glossary">' + gl.map(function (g) {
+      return "<dt>" + mdInline(g.term || "") + "</dt>"
+        + "<dd>" + cite(mdInline(g.definition || "")) + "</dd>";
+    }).join("") + "</dl>";
+    return section("glossary", "关键术语", "themes", "green", gl.length, body);
+  }
+
+  // review → pro/con verdict cards, one per subject.
+  function renderVerdicts(rep, srcIdx, cite) {
+    var vs = rep.verdicts || [];
+    if (!vs.length) return "";
+    var body = '<div class="verdict-grid">' + vs.map(function (v) {
+      var pros = (v.pros || []).map(function (p) { return "<li>" + cite(mdInline(p)) + "</li>"; }).join("");
+      var cons = (v.cons || []).map(function (c) { return "<li>" + cite(mdInline(c)) + "</li>"; }).join("");
+      var srcLink = v.bvid
+        ? '<a class="verdict-src" href="' + vurl(v.bvid) + '" target="_blank" rel="noopener">'
+          + esc((srcIdx[v.bvid] && (srcIdx[v.bvid].author || srcIdx[v.bvid].title)) || v.bvid) + "</a>"
+        : "";
+      return '<div class="verdict-card">'
+        + '<div class="verdict-head"><span class="verdict-subj">' + esc(v.subject || "") + "</span>"
+        + (v.rating ? '<span class="verdict-rating">' + esc(v.rating) + "</span>" : "") + "</div>"
+        + '<div class="proscons">'
+        + '<div class="pros"><h4>优点</h4>' + (pros ? "<ul>" + pros + "</ul>" : '<p class="pc-none">—</p>') + "</div>"
+        + '<div class="cons"><h4>缺点</h4>' + (cons ? "<ul>" + cons + "</ul>" : '<p class="pc-none">—</p>') + "</div>"
+        + "</div>"
+        + (srcLink ? '<div class="verdict-foot">依据：' + srcLink + "</div>" : "")
+        + "</div>";
+    }).join("") + "</div>";
+    return section("verdicts", "测评结论", "video", "green", vs.length, body);
   }
 
   function buildMatrix(rep, srcIdx) {
@@ -1376,6 +1812,19 @@
   $("histRefresh").addEventListener("click", function () { loadHistory(); toast("已刷新历史"); });
   $("topic").addEventListener("keydown", function (e) { if (e.key === "Enter") start(); });
 
+  // ---- auth modal bindings ----
+  $("authClose").addEventListener("click", closeAuth);
+  $("authTabLogin").addEventListener("click", function () { setAuthMode("login"); });
+  $("authTabReg").addEventListener("click", function () { setAuthMode("register"); });
+  $("authSendCode").addEventListener("click", doSendCode);
+  $("authSubmit").addEventListener("click", doSubmitAuth);
+  $("authModal").addEventListener("click", function (e) { if (e.target === this) closeAuth(); });
+  $("authPrivacy").addEventListener("click", function (e) { e.preventDefault(); $("privacyModal").hidden = false; });
+  $("privacyClose").addEventListener("click", function () { $("privacyModal").hidden = true; });
+  $("privacyModal").addEventListener("click", function (e) { if (e.target === this) this.hidden = true; });
+
+  renderAccount();
+  if (authToken) refreshMe();   // validate token + sync balance on load
   loadHistory();
 })();
 </script>

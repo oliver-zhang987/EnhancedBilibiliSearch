@@ -1,0 +1,527 @@
+\documentclass[conference]{IEEEtran}
+
+% ---------------------------------------------------------------------------
+% Packages (all widely available in TeX Live / Overleaf)
+% ---------------------------------------------------------------------------
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  framesep=4pt,
+  xleftmargin=4pt,
+}
+
+\begin{document}
+
+\title{EBSearch: Topic-Driven Multi-Video Retrieval and\\Synthesized Reporting over Bilibili}
+
+\author{\IEEEauthorblockN{EnhancedBilibiliSearch Project}
+\IEEEauthorblockA{Technical Report\\\today}}
+
+\maketitle
+
+\begin{abstract}
+Answering a research question from video usually means watching several videos
+and reconciling what they say---slow, and harder still on Bilibili, where the
+search API must be cryptographically signed, returns no usable relevance score,
+and mixes summarizable explainers with multi-hour course dumps. We present
+\emph{EBSearch}, a pipeline that turns a single topic into one cited,
+synthesized report. It (i) searches Bilibili through the WBI-signed
+\texttt{search/type} endpoint, (ii) ranks and selects the top-$N$ most relevant
+and \emph{summarizable} videos with a transparent heuristic (and an optional
+cheap-LLM re-rank), (iii) fans out per-video summarization by \emph{reusing} a
+deployed AIVideoSummary backend over HTTP---inheriting its cookies, ASR relay,
+and content-addressed cache---and (iv) synthesizes the per-video summaries into a
+single report with a stronger model, under a strict provenance contract in which
+every concrete claim carries a bracketed \texttt{[n]} citation that resolves to a
+source video. A key empirical finding, validated live against the production
+API, is that Bilibili's \texttt{rank\_score} field is null in practice, so we
+rank by \emph{result order} reinforced by hit columns, plays, recency, and a
+duration-fit window. The system classifies the topic into one of six report
+types (how-to, news, comparison, concept, review, general) and emits a
+type-specific schema and rendering. EBSearch shares a unified, stdlib-only
+account and metering layer with the backend. We give an architectural and
+cost/latency-reasoning evaluation; all numbers are explicitly illustrative
+design estimates, not measured benchmarks.
+\end{abstract}
+
+\begin{IEEEkeywords}
+multi-document summarization, information retrieval, large language models,
+citation-grounded generation, Bilibili, report generation.
+\end{IEEEkeywords}
+
+% ===========================================================================
+\section{Introduction}
+% ===========================================================================
+
+A common research task is not ``summarize \emph{this} video'' but ``what do the
+videos on \emph{this topic} collectively say?'' Done by hand it means searching,
+triaging a noisy result list, watching several candidates, and mentally
+reconciling agreements, disagreements, and gaps. EBSearch automates this loop for
+Bilibili and emits a single, cited report. The setting imposes concrete
+constraints that shape the design.
+
+\begin{itemize}
+  \item \textbf{Signed, score-less search.} Bilibili's web search endpoint
+  (\texttt{wbi/search/type}) requires a per-day WBI request signature, a
+  browser-like \texttt{User-Agent}/\texttt{Referer} to clear risk-control
+  (HTTP~412), and login cookies for full access. Crucially, the API's
+  \texttt{rank\_score} field is null in practice, so a system cannot rank by it
+  and must reconstruct relevance from other signals.
+  \item \textbf{Noisy candidate pools.} Raw results interleave concise
+  explainers with multi-hour course compilations and off-topic popular clips;
+  the former are ideal to summarize, the latter are expensive or irrelevant.
+  \item \textbf{Cost and rate limits.} Each summarized video and each strong-LLM
+  call costs money or tokens, and free-tier providers impose tokens-per-minute
+  caps. The pipeline must be aggressively cost-gated: hard prefiltering, a small
+  configurable cap on how many videos are summarized, subtitle-first reuse, and
+  \emph{exactly one} strong-model synthesis call.
+\end{itemize}
+
+\paragraph{Contributions}
+\begin{itemize}
+  \item A stdlib-only WBI-signed Bilibili search client and a transparent,
+  order-based ranking heuristic that does \emph{not} use the (null)
+  \texttt{rank\_score}, with hard prefilters for junk and course-length videos
+  (Sections~\ref{sec:search},~\ref{sec:rank}).
+  \item A fan-out summarization stage that reuses an existing AIVideoSummary
+  backend over HTTP---fetching subtitles itself to avoid platform risk-control,
+  submitting jobs in parallel, and polling adaptively so wall-clock approximates
+  the slowest single video (Section~\ref{sec:fanout}).
+  \item A citation-grounded synthesis stage: one stronger-model call over a
+  self-contained evidence pack, with a strict \texttt{[n]}-provenance contract,
+  deterministic fallbacks, and adaptive report typing into six type-specific
+  schemas (Section~\ref{sec:synth}).
+  \item Reuse of the unified, stdlib-only account/metering layer shared with the
+  backend, with report-level pre-authorize-then-settle billing
+  (Section~\ref{sec:account}).
+\end{itemize}
+
+% ===========================================================================
+\section{System Architecture}
+\label{sec:arch}
+% ===========================================================================
+
+EBSearch is a four-stage pipeline (Table~\ref{tab:stages}, Fig.~\ref{fig:flow})
+orchestrated by a single \texttt{research(topic, cfg)} entry point and exposed as
+a CLI, a REST API, and a standalone web page. The core is standard-library only;
+FastAPI/uvicorn are optional server dependencies. Each stage is cost-gated, and
+exactly one stage makes a strong-model call.
+
+\begin{table}[t]
+\centering
+\caption{EBSearch pipeline stages.}
+\label{tab:stages}
+\footnotesize
+\begin{tabular}{@{}llp{3.5cm}@{}}
+\toprule
+\textbf{Stage} & \textbf{Output} & \textbf{Responsibility} \\
+\midrule
+Search   & \texttt{VideoHit[]}  & WBI-signed multi-plan search; dedup in order \\
+Rank/Select & \texttt{ScoredHit[]} & Hard prefilter + heuristic score (+ optional LLM rerank); top-$N$ \\
+Fan-out  & \texttt{VideoSummary[]} & Reuse AIVideoSummary backend per video (parallel submit, adaptive poll) \\
+Classify & report type          & Topic $\rightarrow$ one of six types (heuristic + optional LLM) \\
+Synthesize & \texttt{TopicReport} & One strong-model, cited, type-specific report \\
+Render   & Markdown             & Adaptive presentation by report type \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\footnotesize
+\begin{verbatim}
+   topic
+     |
+  [Search]  WBI-signed search/type  (multi-plan,
+     |       duration filter, dedup in result order)
+     v
+   VideoHit[]  (rank_score is NULL -> use position)
+     |
+  [Rank/Select]  hard prefilter (junk/short/long/
+     |           off-topic) -> heuristic score
+     |           (position, hit_columns, play,
+     |            recency, duration-fit) -> top-N
+     |           [+ optional cheap-LLM rerank]
+     v
+   ScoredHit[N]
+     |
+  [Fan-out]  per video: fetch subtitle (WBI) ->
+     |        POST /api/jobs to AIVideoSummary backend
+     |        (transcript job; force_asr url job if
+     |         only AI captions + ASR enabled);
+     |        parallel submit, adaptive poll
+     v
+   VideoSummary[]  (reuses backend cookies/relay/cache)
+     |
+  [Classify] topic -> {how_to,news,comparison,
+     |                  concept,review,general}
+     v
+  [Synthesize] ONE strong-model call over an
+     |          evidence pack; strict [n] citations
+     v
+   TopicReport ---> [Render] adaptive Markdown
+\end{verbatim}
+\caption{Topic-to-report data flow. The fan-out stage reuses the AIVideoSummary
+backend over HTTP; synthesis is the single strong-model call.}
+\label{fig:flow}
+\end{figure}
+
+% ===========================================================================
+\section{Methodology and Implementation}
+\label{sec:method}
+% ===========================================================================
+
+\subsection{WBI-signed search}
+\label{sec:search}
+
+The search client is standard-library only. It first derives the daily
+\emph{mixin key} from \texttt{/x/web-interface/nav}: the basenames of two
+returned image URLs are concatenated and reordered by a fixed 64-entry
+permutation table, and the first 32 characters become the key (cached per client
+instance for the day). Each request is then signed by appending \texttt{wts} (a
+timestamp) and \texttt{w\_rid}---the MD5 of the sorted, sanitised,
+percent-encoded query string concatenated with the mixin key:
+
+\begin{lstlisting}[language=Python]
+mixin_key = "".join(s[i] for i in MIXIN)[:32]
+params["wts"] = int(time.time())
+q = urlencode(sorted(sanitize(params)))
+params["w_rid"] = md5((q + mixin_key)).hexdigest()
+\end{lstlisting}
+
+Requests carry a browser \texttt{User-Agent}, the Bilibili \texttt{Referer}, and
+(when configured) cookies parsed from a Netscape file, clearing risk-control. A
+\emph{search plan} (keyword, order, duration filter, page count) is the unit of
+work; the query stage can emit several plans (raw, plus optional native
+``suggest'' phrasings and optional LLM query expansion), which the client
+executes with throttling and merges into a deduplicated list in
+\emph{first-seen} (approximately relevance) order. The observed caps are 1000
+results / 50 pages / 20 per page. Rows with an empty \texttt{bvid} or zero
+duration are dropped at parse time.
+
+\subsection{Ranking without a relevance score}
+\label{sec:rank}
+
+The central empirical finding---validated live, since the canonical community
+API documentation had been taken down---is that the search API's
+\texttt{rank\_score} is null in practice. EBSearch therefore reconstructs
+relevance from the signals that are actually present. Selection has two layers,
+both cheap and the second optional.
+
+\paragraph{Hard prefilter} A candidate is rejected if it has no \texttt{bvid},
+zero or sub-threshold duration (drops clips/shorts), a duration above the
+course cutoff (drops multi-hour compilations that are not cheaply
+summarizable), near-zero plays, or is \emph{off-topic}---defined as having
+neither a title/tag hit flagged by Bilibili nor any overlap between the
+title/tags and the topic's tokens (ASCII words plus CJK runs and bigrams).
+
+\paragraph{Transparent weighted heuristic} Survivors receive a weighted score
+$$
+S = w_p\,p + w_h\,h + w_v\,v + w_r\,r + w_d\,d,
+$$
+where the components are: $p$, a position decay $1/(1+0.12\cdot\text{pos})$ that
+trusts Bilibili's result order (the strongest honest signal); $h$, a
+hit-column strength favouring title/tag matches over description/author; $v$,
+log-damped plays normalised to the pool maximum so one viral course cannot
+dominate; $r$, an exponential recency decay (an $\sim$18-month half-life for a
+fast-moving field); and $d$, a Gaussian duration-fit bell peaking near a typical
+explainer length. The default weights are
+$(w_p,w_h,w_v,w_r,w_d)=(0.34,0.20,0.16,0.12,0.18)$. Course-length videos that
+survive a widened window get a multiplicative penalty so they sink below
+explainers. The reasons behind every score are retained for transparency.
+
+\paragraph{Optional cheap-LLM re-rank} When enabled, only the heuristic's top
+slice is sent to a cheap model for one structured re-rank call; any error falls
+back safely to the heuristic order. This bounds cost (the full pool is never
+sent) and never hard-fails.
+
+\subsection{Fan-out summarization by backend reuse}
+\label{sec:fanout}
+
+Rather than re-implementing transcription, EBSearch \emph{reuses} a deployed
+AIVideoSummary backend over HTTP. Because the two services are co-located, the
+fan-out can hit the backend at \texttt{127.0.0.1} and inherit its Bilibili
+cookies, its overseas ASR relay, and its content-addressed cache---so
+re-running a topic or summarizing a previously-seen video is free.
+
+\paragraph{Subtitle policy} To avoid triggering Bilibili's per-video risk-control
+through the backend's heavy yt-dlp download, the fan-out \emph{itself} fetches
+each video's subtitles via light WBI player-API calls and classifies them as
+\texttt{human}, \texttt{ai}, or \texttt{none}. Human subtitles (best quality,
+free) are always used by submitting a \texttt{transcript} job. When ASR is
+enabled, videos with only AI captions are re-transcribed by submitting a
+\texttt{force\_asr} \texttt{url} job (the backend then skips its subtitle-first
+path and runs Whisper). When ASR is disabled, AI captions are used as-is rather
+than nothing. The duration filter and selection cap remain the main cost gates.
+
+\paragraph{Parallel submit, adaptive poll} Subtitle fetch and job submission run
+concurrently across videos through a capped thread pool (the previous serial,
+one-second-per-video loop was pure latency); the pool is capped to stay gentle on
+the WBI endpoint. The pipeline then polls outstanding jobs, fast at first (cache
+hits finish in seconds) and backing off to a steady cadence, until each job is
+done, errors, or hits a per-video timeout. The net effect is that the fan-out
+wall-clock is dominated by the \emph{slowest single video} rather than the sum
+of all of them. Each result records its transcript origin (\texttt{subtitle} vs
+\texttt{asr}).
+
+\subsection{Adaptive report typing}
+
+Before synthesis the topic is classified into one of six report types
+(\texttt{how\_to}, \texttt{news}, \texttt{comparison}, \texttt{concept},
+\texttt{review}, \texttt{general}) by a transport-light classifier: at most one
+cheap structured LLM call, always backed by a pure-Python keyword heuristic whose
+rules are ordered by specificity so mixed-signal topics resolve sensibly. The
+label space is closed; anything not confidently bucketed is \texttt{general}. The
+type drives both the synthesis schema and the rendering.
+
+\subsection{Citation-grounded synthesis}
+\label{sec:synth}
+
+Synthesis makes \emph{exactly one} call to a stronger model (e.g.\
+DeepSeek-v4-pro, or Groq's \texttt{gpt-oss-120b} via the overseas relay) and is
+engineered so that faithfulness is structural rather than hoped-for.
+
+\paragraph{Self-contained evidence pack} The model is handed a compact JSON
+\emph{evidence pack} containing only, per video, a 1-based citation number
+\texttt{n}, its \texttt{bvid}, title, author, duration, TL;DR, capped key points
+and keywords, and chapter titles with timestamps. The prompt forbids any fact
+not in the pack.
+
+\paragraph{Provenance contract} Every concrete claim must carry a bracketed
+\texttt{[n]} marker that resolves to the evidence pack's video \texttt{n} (and
+thus to \texttt{sources[n-1]}); the model is told to emit \texttt{[n]} only, never
+raw BV numbers or titles. Timestamps may come only from chapter
+\texttt{start}/\texttt{t} values, so the model cannot invent timecodes. The
+report separates \emph{consensus} from \emph{disagreement} and is required to
+flag minority/dissenting views explicitly. We chose this structured-sections
+shape over a comparison-matrix-only or a flowing-brief prompt because it maps
+1:1 onto the \texttt{TopicReport} object, forces the consensus/dissent split, and
+makes provenance checkable per claim.
+
+\paragraph{Type-specific blocks} The base schema (overview, themes, consensus,
+disagreements, per-video highlights with timestamps, a ranked watch list, gaps,
+sources) is augmented by one type-specific block: \texttt{steps} for how-to,
+\texttt{timeline} for news, a \texttt{comparison} matrix for comparison,
+\texttt{glossary} for concept, and \texttt{verdicts} for review. The
+\texttt{general} type reproduces the base prompt verbatim.
+
+\paragraph{Cost discipline and graceful degradation} Cost is bounded by sending
+trimmed evidence (chapter titles only, capped lists) so a report fits within
+free-tier token-per-minute limits, capping the synthesis output, and keeping
+\texttt{max\_videos} small by default. The synthesis caller falls back from the
+primary provider (e.g.\ Groq, which can return 413 on its free tier) to a
+direct DeepSeek call so a report is always produced. If the model returns prose
+or broken JSON, a fence-aware extractor and deterministic backfill still produce
+a well-formed \texttt{TopicReport} (overview from best-effort text; per-video,
+sources, and watch list reconstructed straight from the summaries), so the
+pipeline never hard-fails on a flaky completion.
+
+\paragraph{Transport} The LLM client is a tiny stdlib OpenAI-compatible chat
+function. When a forward proxy is configured it routes the request through an
+explicit HTTPS \texttt{CONNECT} tunnel via \texttt{http.client} with
+\texttt{set\_tunnel}---\emph{not} \texttt{urllib}'s \texttt{ProxyHandler}, which
+does not reliably tunnel HTTPS and can leak the request to the origin IP,
+re-triggering a provider geo-block (HTTP~403). TLS stays end-to-end to the
+provider, so the proxy never sees the key or body.
+
+\subsection{Adaptive rendering}
+
+The renderer turns a \texttt{TopicReport} into Markdown ordered as the reader's
+journey: overview, themes, consensus vs.\ disagreements, a sub-topic by video
+coverage matrix, per-video highlights with clickable \texttt{[mm:ss]} deep links
+(\texttt{?t=sec}), a ranked watch list, gaps, and sources. The \texttt{[n]}
+provenance tags are rewritten into Markdown links to the corresponding source
+video, so every claim remains attributable in the rendered output, and the
+type-specific block is rendered in a type-appropriate style.
+
+\subsection{Unified account and metering}
+\label{sec:account}
+
+EBSearch embeds the \emph{same} stdlib-only account subsystem as the backend and
+points it at the \emph{same} SQLite file and the \emph{same} JWT secret, so a
+user authenticated against one service is recognised by the other. Storage uses
+WAL mode with short \texttt{IMMEDIATE} transactions and a retry-on-locked loop
+(two processes, one file); credit changes go through the same atomic
+check-and-decrement ledger; tokens are the same hand-rolled HS256 JWTs; and
+phone numbers are salted-SHA-256 hashed for PIPL compliance. Billing is
+pre-authorize-then-settle at the \emph{report} level: a report's cost is a base
+plus a per-video charge times the number of videos (plus a premium-model
+surcharge), pre-authorized when the research job starts and refunded on failure.
+Because EBSearch already charges its user for the report, its fan-out calls into
+the backend present a static service key and are \emph{not} metered again there,
+avoiding double-billing.
+
+% ===========================================================================
+\section{Evaluation}
+\label{sec:eval}
+% ===========================================================================
+
+We present an architectural and cost/latency-reasoning evaluation. Every number
+below is an \emph{illustrative design estimate} derived from the architecture,
+not a measurement, and is labelled as such.
+\textbf{[Insert measured end-to-end timings, token counts, and a screenshot of a
+rendered report here once a controlled study is run.]}
+
+\subsection{Cost reasoning}
+
+Per topic, the dominant costs are (i) the per-video summaries and (ii) the single
+synthesis call. EBSearch minimises both: the duration filter and hard prefilter
+cut the pool before any summary is requested; a small \texttt{max\_videos} (4 by
+default) caps the number of summaries; subtitle-first reuse means most summaries
+are the cheap caption tier; and synthesis is exactly one call over trimmed
+evidence. Table~\ref{tab:cost} sketches the relative spend for a default run.
+
+\begin{table}[t]
+\centering
+\caption{Illustrative per-topic cost decomposition at \texttt{max\_videos}=4,
+subtitle-first (\emph{design estimates}, not measurements).}
+\label{tab:cost}
+\footnotesize
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Component} & \textbf{Calls} & \textbf{Relative cost} \\
+\midrule
+Search (WBI)              & several HTTP & negligible (no LLM) \\
+Heuristic rank/select     & 0 LLM        & none \\
+Per-video summary ($N$)   & $N$ cheap    & low (caption tier) \\
+Synthesis                 & 1 strong     & moderate (the main LLM spend) \\
+Repeat of seen video/topic& cache hit    & 0 (backend cache) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The optional cheap-LLM re-rank and query expansion add at most one cheap call
+each and are off by default; the largest \emph{free} quality lever is the
+duration filter, which removes course/compilation noise at zero cost.
+
+\subsection{Latency reasoning}
+
+Because the fan-out submits all jobs in parallel and polls adaptively, the
+summarization wall-clock approximates the time of the slowest single video, not
+the sum---and cache hits return almost immediately. Synthesis is a single call.
+Search and ranking are comparatively cheap. Table~\ref{tab:latency} contrasts
+the serial baseline with the parallel design for $N$ videos.
+
+\begin{table}[t]
+\centering
+\caption{Illustrative fan-out wall-clock for $N$ videos (\emph{design
+estimates}; $T_i$ is video $i$'s summarization time).}
+\label{tab:latency}
+\footnotesize
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Scheme} & \textbf{Summarization wall-clock} \\
+\midrule
+Serial submit + poll      & $\approx \sum_i T_i$ \\
+Parallel submit + adaptive poll (EBSearch) & $\approx \max_i T_i$ \\
+All cached                & $\approx$ seconds (poll cadence) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Qualitative quality observations}
+
+The structured-sections synthesis with a strict provenance contract was chosen
+after comparing report shapes on a real fixture; in that exploration the
+structured form captured consensus, dissent, and gaps faithfully while keeping
+every claim attributable. The order-based ranking, the off-topic guard, and the
+course penalty together keep the selected set on-topic and summarizable.
+\textbf{[Insert a rendered example report, the selected-video list with scores,
+and a faithfulness spot-check here.]}
+
+% ===========================================================================
+\section{Related Work}
+\label{sec:related}
+% ===========================================================================
+
+EBSearch sits at the intersection of information retrieval, multi-document
+summarization, and report generation. The per-video stage builds on abstractive
+video summarization over transcripts (and, transitively, on robust speech
+recognition of the Whisper family~\cite{whisper} via the reused backend). The
+topic-level synthesis follows retrieval-augmented generation~\cite{rag}, in which
+a generator is constrained to retrieved evidence; EBSearch's evidence pack and
+\texttt{[n]} provenance contract are a citation-grounded instance of this idea,
+aligned with the broader line of work on report generation that requires every
+claim to carry a verifiable source. Relative to closed-source Bilibili search and
+summary tools, EBSearch's distinguishing features are its transparent,
+score-less ranking heuristic; its reuse of an existing summarization backend over
+HTTP; and its adaptive, type-specific, fully cited report schema.
+
+% ===========================================================================
+\section{Limitations and Compliance}
+\label{sec:limits}
+% ===========================================================================
+
+\paragraph{Geo-relay fragility} Synthesis via an overseas provider depends on a
+forward proxy that is a single point of failure; the design mitigates this with a
+direct-DeepSeek fallback, but a relay outage still degrades the strong path.
+
+\paragraph{Bilibili ToS and risk-control} Search and subtitle fetching rely on
+WBI signing, browser-mimicking headers, and login cookies, and are subject to
+Bilibili's terms of service and evolving risk-control (the canonical community
+API documentation was taken down, so behaviour must be verified empirically and
+access throttled conservatively). The null \texttt{rank\_score} is itself an
+example of undocumented behaviour that may change.
+
+\paragraph{AIGC labelling} The synthesized report is AI-generated and should be
+labelled as such where required by applicable mainland-China AI-generated-content
+rules.
+
+\paragraph{No real payment yet} The shared credits ledger accounts for usage but
+there is no integrated payment processor; credits are granted administratively or
+via invite codes.
+
+\paragraph{Single-node, in-memory job store} Research jobs live in an in-process
+registry on a single worker; a restart clears in-flight jobs. Free-tier provider
+token-per-minute limits also bound how many videos can be synthesized in one
+report (the default cap reflects this), and larger reports need a paid tier.
+
+% ===========================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% ===========================================================================
+
+EBSearch demonstrates that turning a topic into a trustworthy, cited report over
+Bilibili is achievable by combining careful platform engineering with disciplined
+reuse. Signing search requests, declining to trust a null relevance score in
+favour of result order and a transparent heuristic, reusing an existing
+summarization backend (and its cookies, ASR relay, and cache) over HTTP, and
+constraining a single strong-model synthesis call to a self-contained evidence
+pack with a strict \texttt{[n]} provenance contract together yield reports whose
+every claim is attributable, while keeping cost to essentially one strong call
+per topic. Adaptive report typing tailors both schema and presentation to the
+question. Sharing a stdlib-only account and metering layer with the backend turns
+the pipeline into a meterable service without duplicating infrastructure. Future
+work includes measured benchmarks to replace the analytical estimates here, a
+durable job queue, and paid-tier scaling beyond the current per-report video cap.
+
+% ===========================================================================
+\begin{thebibliography}{9}
+
+\bibitem{whisper}
+A.~Radford, J.~W.~Kim, T.~Xu, G.~Brockman, C.~McLeavey, and I.~Sutskever,
+``Robust Speech Recognition via Large-Scale Weak Supervision,'' OpenAI, 2022.
+\url{https://cdn.openai.com/papers/whisper.pdf}
+
+\bibitem{rag}
+P.~Lewis et al.,
+``Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks,''
+in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2020.
+\url{https://arxiv.org/abs/2005.11401}
+
+\end{thebibliography}
+
+\end{document}
