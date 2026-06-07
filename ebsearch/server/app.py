@@ -18,6 +18,7 @@ Env:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -49,11 +50,12 @@ _INDEX_HTML = _WEB_DIR / "index.html"
 class _Job:
     """A single research run. Mutated from the worker thread, read by the API."""
 
-    __slots__ = ("id", "topic", "status", "progress", "result", "error", "_lock")
+    __slots__ = ("id", "topic", "owner", "status", "progress", "result", "error", "_lock")
 
-    def __init__(self, job_id: str, topic: str) -> None:
+    def __init__(self, job_id: str, topic: str, owner: str = "_shared") -> None:
         self.id = job_id
         self.topic = topic
+        self.owner = owner               # per-client history partition
         self.status = "pending"          # pending | running | done | error
         self.progress: List[str] = []
         self.result: Optional[Dict[str, Any]] = None
@@ -86,23 +88,41 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ebs-research")
 # index file backs the list view; full records are one JSON per id.
 # --------------------------------------------------------------------------- #
 _DATA_DIR = Path(os.environ.get("EBS_DATA_DIR", "/app/data"))
-_HIST_DIR = _DATA_DIR / "history"
-_HIST_INDEX = _DATA_DIR / "history_index.json"
+_HIST_ROOT = _DATA_DIR / "history"      # per-owner subdirs underneath
 _HIST_LOCK = threading.Lock()
 _HIST_MAX = int(os.environ.get("EBS_HISTORY_MAX", "200"))
 _ID_RE = re.compile(r"^[A-Za-z0-9]+$")  # guard against path traversal in {id}
 
 
-def _load_index_locked() -> List[Dict[str, Any]]:
+def _owner_id(client_id: Optional[str]) -> str:
+    """Stable, filesystem-safe per-client owner id so each user only sees their own
+    history. Clients send a persistent X-Client-Id; missing ids share one bucket."""
+    cid = (client_id or "").strip()
+    if not cid:
+        return "_shared"
+    return hashlib.sha256(cid.encode("utf-8")).hexdigest()[:24]
+
+
+def _owner_dir(owner: str) -> Path:
+    return _HIST_ROOT / owner
+
+
+def _owner_index(owner: str) -> Path:
+    return _owner_dir(owner) / "index.json"
+
+
+def _load_index(owner: str) -> List[Dict[str, Any]]:
     try:
-        return json.loads(_HIST_INDEX.read_text(encoding="utf-8"))
+        return json.loads(_owner_index(owner).read_text(encoding="utf-8"))
     except Exception:
         return []
 
 
 def _hist_save(job: "_Job", result: Dict[str, Any]) -> None:
-    """Write the finished report + update the index (best-effort, never raises)."""
+    """Write the finished report to the job owner's history (best-effort)."""
     try:
+        owner = getattr(job, "owner", None) or "_shared"
+        d = _owner_dir(owner)
         created = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         rec = {
             "id": job.id, "topic": job.topic, "created_at": created,
@@ -114,18 +134,18 @@ def _hist_save(job: "_Job", result: Dict[str, Any]) -> None:
         }
         meta = {k: rec[k] for k in ("id", "topic", "created_at", "generated_at", "n_summarized")}
         with _HIST_LOCK:
-            _HIST_DIR.mkdir(parents=True, exist_ok=True)
-            (_HIST_DIR / (job.id + ".json")).write_text(
+            d.mkdir(parents=True, exist_ok=True)
+            (d / (job.id + ".json")).write_text(
                 json.dumps(rec, ensure_ascii=False), encoding="utf-8")
-            idx = [m for m in _load_index_locked() if m.get("id") != job.id]
+            idx = [m for m in _load_index(owner) if m.get("id") != job.id]
             idx.insert(0, meta)
             for old in idx[_HIST_MAX:]:  # trim oldest beyond the cap
                 try:
-                    (_HIST_DIR / (old["id"] + ".json")).unlink()
+                    (d / (old["id"] + ".json")).unlink()
                 except OSError:
                     pass
             idx = idx[:_HIST_MAX]
-            _HIST_INDEX.write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
+            _owner_index(owner).write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
 
@@ -210,12 +230,13 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/research", status_code=202, dependencies=[Depends(_require_api_key)])
-    def start_research(req: ResearchRequest) -> Dict[str, str]:
+    def start_research(req: ResearchRequest,
+                       x_client_id: Optional[str] = Header(default=None)) -> Dict[str, str]:
         topic = (req.topic or "").strip()
         if not topic:
             raise HTTPException(status_code=400, detail="topic is required")
         job_id = uuid.uuid4().hex
-        job = _Job(job_id, topic)
+        job = _Job(job_id, topic, _owner_id(x_client_id))
         _JOBS[job_id] = job
         overrides = {
             "max_videos": req.max_videos,
@@ -229,37 +250,41 @@ def create_app() -> FastAPI:
         return {"job_id": job_id}
 
     @app.get("/api/research/{job_id}", dependencies=[Depends(_require_api_key)])
-    def get_research(job_id: str) -> Any:
+    def get_research(job_id: str, x_client_id: Optional[str] = Header(default=None)) -> Any:
         job = _JOBS.get(job_id)
-        if job is None:
+        # Only the client that started a job may poll it.
+        if job is None or job.owner != _owner_id(x_client_id):
             raise HTTPException(status_code=404, detail="unknown job_id")
         return JSONResponse(job.snapshot())
 
     @app.get("/api/history", dependencies=[Depends(_require_api_key)])
-    def history_list() -> Any:
+    def history_list(x_client_id: Optional[str] = Header(default=None)) -> Any:
         with _HIST_LOCK:
-            return JSONResponse(_load_index_locked())
+            return JSONResponse(_load_index(_owner_id(x_client_id)))
 
     @app.get("/api/history/{rec_id}", dependencies=[Depends(_require_api_key)])
-    def history_get(rec_id: str) -> Any:
+    def history_get(rec_id: str, x_client_id: Optional[str] = Header(default=None)) -> Any:
         if not _ID_RE.match(rec_id):
             raise HTTPException(status_code=404, detail="not found")
-        p = _HIST_DIR / (rec_id + ".json")
+        p = _owner_dir(_owner_id(x_client_id)) / (rec_id + ".json")
         if not p.is_file():
             raise HTTPException(status_code=404, detail="not found")
         return JSONResponse(json.loads(p.read_text(encoding="utf-8")))
 
     @app.delete("/api/history/{rec_id}", dependencies=[Depends(_require_api_key)])
-    def history_delete(rec_id: str) -> Dict[str, bool]:
+    def history_delete(rec_id: str, x_client_id: Optional[str] = Header(default=None)) -> Dict[str, bool]:
         if not _ID_RE.match(rec_id):
             raise HTTPException(status_code=404, detail="not found")
+        owner = _owner_id(x_client_id)
         with _HIST_LOCK:
-            try:
-                (_HIST_DIR / (rec_id + ".json")).unlink()
-            except OSError:
-                pass
-            idx = [m for m in _load_index_locked() if m.get("id") != rec_id]
-            _HIST_INDEX.write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
+            d = _owner_dir(owner)
+            if d.is_dir():  # nothing to do if this client has no history
+                try:
+                    (d / (rec_id + ".json")).unlink()
+                except OSError:
+                    pass
+                idx = [m for m in _load_index(owner) if m.get("id") != rec_id]
+                _owner_index(owner).write_text(json.dumps(idx, ensure_ascii=False), encoding="utf-8")
         return {"ok": True}
 
     return app

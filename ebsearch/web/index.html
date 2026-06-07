@@ -776,11 +776,18 @@
   $("menuBtn").addEventListener("click", function () { setDrawer(true); });
   $("backdrop").addEventListener("click", function () { setDrawer(false); });
 
-  // ===================== API key =====================
+  // ===================== API key + per-client id =====================
   var storedKey = localStorage.getItem("ebs_api_key") || "";
   if (storedKey) $("apikey").value = storedKey;
+  // A persistent random id so history is private per browser (the server
+  // partitions stored reports by a hash of this).
+  var clientId = localStorage.getItem("ebs_client_id");
+  if (!clientId) {
+    clientId = "c_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem("ebs_client_id", clientId);
+  }
   function headers() {
-    var h = { "Content-Type": "application/json" };
+    var h = { "Content-Type": "application/json", "X-Client-Id": clientId };
     var k = $("apikey").value.trim();
     if (k) h["X-API-Key"] = k;
     return h;
