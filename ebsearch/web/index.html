@@ -415,11 +415,9 @@
   .sec-ico.amber { background: var(--warn-soft); color: var(--warn); }
   .sec-ico.blue { background: var(--accent2-soft); color: var(--accent2); }
 
-  .lede { font-size: 15.5px; line-height: 1.8; color: var(--ink-2); max-width: var(--prose-maxw); }
+  /* Body copy fills its card (text == box width) at every resolution. */
+  .lede { font-size: 15.5px; line-height: 1.8; color: var(--ink-2); }
   .lede p { margin: 0 0 10px; } .lede p:last-child { margin: 0; }
-  /* cap the body-text measure on the other long-form prose blocks too */
-  .theme-item .th-s, .watch-item .w-reason { max-width: var(--prose-maxw); }
-  .cd-col ul, .plain-list, .md-fallback { max-width: var(--prose-maxw); }
   /* numbered citation superscripts (Perplexity-style) */
   sup.cite { line-height: 0; }
   sup.cite a {
