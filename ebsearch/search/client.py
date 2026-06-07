@@ -18,7 +18,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ..models import VideoHit
 from .query import build_plans, SearchPlan
@@ -32,11 +32,30 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 _REFERER = "https://www.bilibili.com/"
 _NAV = "https://api.bilibili.com/x/web-interface/nav"
 _SEARCH = "https://api.bilibili.com/x/web-interface/wbi/search/type"
+_VIEW = "https://api.bilibili.com/x/web-interface/view"
+_PLAYER = "https://api.bilibili.com/x/player/wbi/v2"
+_SUB_PREF = ["zh-Hans", "ai-zh", "zh-CN", "zh"]
 _EM = re.compile(r"</?em[^>]*>")
 
 
 def _strip_em(s: str) -> str:
     return _EM.sub("", s or "")
+
+
+def _norm_url(u: str) -> str:
+    return ("https:" + u) if u.startswith("//") else u
+
+
+def _pick_sub(subs: list):
+    """Pick the best subtitle URL (zh-Hans > ai-zh > zh-CN > zh > first)."""
+    for lan in _SUB_PREF:
+        for s in subs:
+            if s.get("lan") == lan and s.get("subtitle_url"):
+                return _norm_url(s["subtitle_url"])
+    for s in subs:
+        if s.get("subtitle_url"):
+            return _norm_url(s["subtitle_url"])
+    return None
 
 
 def _parse_duration(s) -> int:
@@ -172,3 +191,45 @@ class BilibiliSearchClient:
         plans = build_plans(topic, self.cfg, llm_complete=llm_complete,
                             cookie_header=self.cookie_header())
         return self.run_plans(plans)
+
+    # --- subtitle fetch (avoids the backend's heavy yt-dlp download) -------- #
+    def _download_subtitle(self, url: str) -> List[Dict[str, Any]]:
+        req = urllib.request.Request(_norm_url(url),
+                                     headers={"User-Agent": _UA, "Referer": _REFERER})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        out = []
+        for it in (d.get("body") or []):
+            t = (it.get("content") or "").strip()
+            if t:
+                out.append({"start": float(it.get("from") or 0.0),
+                            "end": float(it.get("to") or 0.0),
+                            "text": t, "source": "subtitle"})
+        return out
+
+    def fetch_subtitle(self, bvid: str):
+        """Fetch CC/AI subtitles for *bvid* via the WBI player API (light: a few API
+        calls, no media download). Returns (segments, media_dict); segments may be []
+        when the video has no usable subtitle. Raises on network errors."""
+        v = self._get_json(_VIEW + "?bvid=" + bvid)
+        data = (v.get("data") or {}) if v.get("code") == 0 else {}
+        cid = data.get("cid") or ((data.get("pages") or [{}])[0] or {}).get("cid")
+        media = {
+            "platform": "bilibili", "id": bvid,
+            "url": "https://www.bilibili.com/video/%s" % bvid,
+            "title": data.get("title", ""),
+            "uploader": (data.get("owner") or {}).get("name", ""),
+            "description": (data.get("desc") or "")[:500],
+            "duration": float(data.get("duration") or 0.0),
+            "language": "zh", "tags": [],
+        }
+        if not cid:
+            return [], media
+        params = self._sign({"bvid": bvid, "cid": cid})
+        purl = _PLAYER + "?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
+        p = self._get_json(purl)
+        subs = (((p.get("data") or {}).get("subtitle") or {}).get("subtitles")) or []
+        suburl = _pick_sub(subs)
+        if not suburl:
+            return [], media
+        return self._download_subtitle(suburl), media

@@ -50,7 +50,7 @@ def research(topic: str, cfg: Optional[Config] = None, *, logger=None) -> Resear
     log("select: %d chosen" % len(selected))
 
     # 3) fan-out summarize (reuse backend)
-    summaries: List[VideoSummary] = summarize_selected(selected, cfg, logger=logger)
+    summaries: List[VideoSummary] = summarize_selected(selected, cfg, client=client, logger=logger)
     ok = [s for s in summaries if s.ok]
     log("summarize: %d/%d ok" % (len(ok), len(summaries)))
 

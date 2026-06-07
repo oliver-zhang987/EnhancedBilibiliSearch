@@ -39,27 +39,47 @@ def summarize_selected(
     selected: List[ScoredHit],
     cfg,
     *,
+    client=None,
     poll_interval: float = 6.0,
     per_video_timeout: float = 420.0,
+    fetch_delay: float = 1.0,
     logger=None,
 ) -> List[VideoSummary]:
     """Summarize each selected hit via the backend. Submits all jobs, then polls.
 
-    Returns a VideoSummary per input (ok=False with an error on failure), in input order.
+    To avoid Bilibili risk-control (HTTP 412) from the backend's per-video yt-dlp
+    download, we fetch each video's subtitle here (light WBI API calls, throttled) and
+    submit a `transcript` job; only videos with no subtitle fall back to a `url` (ASR)
+    job, and only when cfg.allow_asr is set. Returns a VideoSummary per input.
     """
     base = cfg.backend_url.rstrip("/")
     key = cfg.backend_api_key
     log = logger or (lambda *a, **k: None)
 
-    # 1) submit
+    # 1) submit — subtitle -> transcript job; else (opt-in) ASR url job
     jobs: Dict[str, dict] = {}   # bvid -> {hit, job_id, error}
     for sh in selected:
         hit = sh.hit
+        segs, media = None, None
+        if client is not None:
+            try:
+                segs, media = client.fetch_subtitle(hit.bvid)
+            except Exception as e:
+                log("subtitle fetch failed %s: %s" % (hit.bvid, e))
+                segs = None
         try:
-            resp = _post("%s/api/jobs" % base, {"type": "url", "url": hit.url}, key)
-            jobs[hit.bvid] = {"hit": hit, "job_id": resp.get("job_id"), "error": None}
+            if segs:
+                body = {"type": "transcript", "media": media, "segments": segs}
+                resp = _post("%s/api/jobs" % base, body, key)
+                jobs[hit.bvid] = {"hit": hit, "job_id": resp.get("job_id"), "error": None}
+            elif getattr(cfg, "allow_asr", False):
+                resp = _post("%s/api/jobs" % base, {"type": "url", "url": hit.url}, key)
+                jobs[hit.bvid] = {"hit": hit, "job_id": resp.get("job_id"), "error": None}
+            else:
+                jobs[hit.bvid] = {"hit": hit, "job_id": None, "error": "无字幕（未开启ASR）"}
         except Exception as e:
             jobs[hit.bvid] = {"hit": hit, "job_id": None, "error": "submit:%s" % e}
+        time.sleep(fetch_delay)  # be gentle on Bilibili between videos
 
     # 2) poll outstanding until done/error or timeout
     results: Dict[str, VideoSummary] = {}
