@@ -904,7 +904,7 @@
   <div class="modal-card">
     <button class="modal-x" id="authClose" type="button">&times;</button>
     <h2>输入访问码</h2>
-    <div class="modal-sub">用访问码进入即获赠免费额度（积分）。无需手机号，不收集任何个人信息。</div>
+    <div class="modal-sub">用访问码进入即可使用。无需手机号，不收集任何个人信息。</div>
     <div class="auth-field">
       <label>访问码</label>
       <input id="authCode" type="text" placeholder="请输入访问码" autocomplete="off" />
@@ -920,15 +920,15 @@
     <button class="modal-x" id="privacyClose" type="button">&times;</button>
     <h2>隐私政策</h2>
     <div class="privacy-body">
-      <p>我们重视并保护你的个人信息，遵循《个人信息保护法》(PIPL)。</p>
+      <p>本服务遵循《个人信息保护法》(PIPL)，并尽量不收集个人信息。</p>
       <h3>我们收集什么</h3>
-      <p>手机号（仅以加盐 SHA-256 哈希存储，不保存明文）、邀请码、积分与使用记录。</p>
+      <p>仅一个匿名账号 ID、你输入的访问码，以及生成记录。<strong>不收集手机号或任何个人身份信息。</strong></p>
       <h3>用途</h3>
-      <p>用于账号注册/登录鉴权、积分计费与防滥用，不用于与此无关的用途。</p>
+      <p>用于账号识别（区分你的历史记录）与防滥用，不用于与此无关的用途。</p>
       <h3>第三方</h3>
-      <p>验证码经短信服务商发送；摘要/报告由第三方大模型 API 生成（仅传输必要文本）。</p>
+      <p>摘要/报告由第三方大模型 API 生成（仅传输必要文本）。</p>
       <h3>你的权利</h3>
-      <p>你可查询、删除你的数据并撤回同意。如需协助请联系站点管理员。</p>
+      <p>你可随时删除你的历史记录与账号。如需协助请联系站点管理员。</p>
       <h3>AI 生成内容</h3>
       <p>本服务输出由 AI 生成，已按规定标注「AI 生成」，可能存在错误，请结合原视频核实。</p>
     </div>
@@ -1006,14 +1006,13 @@
           '<button class="acct-card" id="acctCardBtn" type="button" title="账户">' +
             '<span class="acct-avatar">' + esc(_avatarText()) + '</span>' +
             '<span class="acct-meta"><span class="acct-name">' + esc(_displayName()) + '</span>' +
-              '<span class="acct-bal">◈ ' + _credits() + ' 积分</span></span>' +
+              '<span class="acct-bal" style="color:var(--faint,#9a9ab0)">匿名账户</span></span>' +
             '<svg class="acct-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' +
           '</button>';
         $("acctCardBtn").addEventListener("click", function (e) { e.stopPropagation(); toggleAcctMenu(this); });
       }
       if (tb) {
         tb.innerHTML =
-          '<span class="tb-bal" title="积分余额">◈ ' + _credits() + '</span>' +
           '<button class="tb-avatar" id="tbAvatar" type="button" title="账户">' + esc(_avatarText()) + '</button>';
         $("tbAvatar").addEventListener("click", function (e) { e.stopPropagation(); toggleAcctMenu(this); });
       }
@@ -1037,9 +1036,7 @@
     var pop = document.createElement("div");
     pop.id = "acctPop"; pop.className = "acct-pop"; pop._anchor = anchor;
     pop.innerHTML =
-      '<div class="pop-head"><div class="ph-name">' + esc(_displayName()) + '</div>' +
-        '<div class="ph-bal">◈ ' + _credits() + ' 积分</div></div>' +
-      '<button type="button" data-act="refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>刷新积分</button>' +
+      '<div class="pop-head"><div class="ph-name">' + esc(_displayName()) + '</div></div>' +
       '<button type="button" data-act="privacy"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>隐私政策</button>' +
       '<button type="button" data-act="logout" class="danger"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>退出登录</button>';
     document.body.appendChild(pop);
@@ -1051,8 +1048,7 @@
     pop.addEventListener("click", function (e) {
       var b = e.target.closest("button"); if (!b) return;
       var act = b.getAttribute("data-act");
-      if (act === "refresh") refreshMe(true);
-      else if (act === "privacy") $("privacyModal").hidden = false;
+      if (act === "privacy") $("privacyModal").hidden = false;
       else if (act === "logout") { setAuth("", null); toast("已退出登录"); }
       pop.remove();
     });
@@ -1095,7 +1091,7 @@
     if (!res.ok) { authErr((res.data && res.data.detail) || "访问码无效"); return; }
     setAuth(res.data.token, res.data.user);
     closeAuth();
-    toast("已进入，赠送积分 " + ((res.data.user && res.data.user.credits) || 0));
+    toast("已进入");
   }
   function refreshMe(notify) {
     if (!authToken) return;
@@ -1103,7 +1099,7 @@
       if (r.status === 401) { setAuth("", null); return null; }
       return r.ok ? r.json() : null;
     }).then(function (d) {
-      if (d && d.user) { setAuth(authToken, d.user); if (notify) toast("积分余额：" + d.user.credits + " 分"); }
+      if (d && d.user) { setAuth(authToken, d.user); }
     }).catch(function () {});
   }
 
@@ -1186,14 +1182,6 @@
           setAuth("", null); show("inputView"); openAuth("login");
           throw new Error("登录已过期，请重新登录");
         }
-        if (r.status === 402) {
-          return r.json().then(function (d) {
-            var det = (d && d.detail) || {};
-            refreshMe();
-            show("inputView");
-            throw new Error("积分不足（需要 " + (det.required || "?") + "，余额 " + (det.balance != null ? det.balance : "?") + "）。可用邀请码获取更多积分。");
-          });
-        }
         if (r.status !== 202 && !r.ok) throw new Error("提交失败 (HTTP " + r.status + ")");
         return r.json();
       })
@@ -1234,14 +1222,12 @@
           });
           show("reportView");
           loadHistory();
-          refreshMe();   // credits were spent — sync the displayed balance
         } else if (data.status === "error") {
           stop();
           setStepperError();
           $("go").disabled = false;
           $("statusText").textContent = "出错：" + (data.error || "未知错误");
           toast(data.error || "生成失败", true);
-          refreshMe();   // failed runs are refunded server-side — resync balance
         }
       })
       .catch(function (err) {
