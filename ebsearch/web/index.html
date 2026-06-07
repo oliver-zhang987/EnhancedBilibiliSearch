@@ -35,6 +35,11 @@
     --radius-sm: 9px;
     --sidebar-w: 286px;
     --maxw: 760px;
+    /* report layout: a fluid shell that fills the main column, plus a comfortable
+       cap on the *prose* measure so long-form text stays readable on huge screens. */
+    --report-maxw: 1760px;   /* generous ceiling; centers only on very wide displays */
+    --prose-maxw: 78ch;      /* readable line length for body copy inside cards */
+    --toc-w: clamp(200px, 16vw, 280px);
     --ease: cubic-bezier(.21,.6,.35,1);
   }
   :root[data-theme="dark"] {
@@ -185,9 +190,17 @@
 
   .scroll { flex: 1; }
   .view { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 80px; }
-  /* the report needs much more room than the 760px input composer: a wide reading
-     column plus the 200px sticky TOC. */
-  #reportView { max-width: 1120px; }
+  /* The report is a fluid reading view: it fills the available width of the main
+     column (viewport minus the sidebar) instead of floating in a fixed strip.
+     `min(var(--report-maxw), 100%)` tracks the real resolution and only centers
+     once the main area exceeds the generous ceiling. Horizontal padding scales
+     with the viewport so wide monitors get bigger, balanced gutters. */
+  #reportView {
+    max-width: min(var(--report-maxw), 100%);
+    width: 100%;
+    padding-left: clamp(24px, 2.6vw, 64px);
+    padding-right: clamp(24px, 2.6vw, 64px);
+  }
 
   /* ---------- hero / input ---------- */
   .hero { text-align: center; padding: 28px 0 8px; }
@@ -359,8 +372,13 @@
   }
   .report-meta .pill b { color: var(--pink-d); }
 
-  /* in-report layout: content + sticky TOC */
-  .report-body { display: grid; grid-template-columns: 1fr 200px; gap: 36px; margin-top: 22px; align-items: start; }
+  /* in-report layout: content (fluid) + sticky TOC (fluid, capped) */
+  .report-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--toc-w);
+    gap: clamp(28px, 3vw, 56px);
+    margin-top: 22px; align-items: start;
+  }
   .toc { position: sticky; top: 22px; font-size: 13px; }
   .toc .toc-lbl { font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
   .toc a {
@@ -369,6 +387,9 @@
   }
   .toc a:hover { color: var(--ink); background: var(--line-2); text-decoration: none; }
   .toc a.active { color: var(--pink-d); border-left-color: var(--pink); background: var(--pink-soft); font-weight: 600; }
+  /* the content column fills the available width; cards/grids/tables stretch to
+     it. Only the long-form *prose* inside is constrained to a readable measure so
+     paragraphs don't become unreadably wide on large monitors. */
   .content { min-width: 0; }
 
   /* section cards */
@@ -394,8 +415,11 @@
   .sec-ico.amber { background: var(--warn-soft); color: var(--warn); }
   .sec-ico.blue { background: var(--accent2-soft); color: var(--accent2); }
 
-  .lede { font-size: 15.5px; line-height: 1.8; color: var(--ink-2); }
+  .lede { font-size: 15.5px; line-height: 1.8; color: var(--ink-2); max-width: var(--prose-maxw); }
   .lede p { margin: 0 0 10px; } .lede p:last-child { margin: 0; }
+  /* cap the body-text measure on the other long-form prose blocks too */
+  .theme-item .th-s, .watch-item .w-reason { max-width: var(--prose-maxw); }
+  .cd-col ul, .plain-list, .md-fallback { max-width: var(--prose-maxw); }
   /* numbered citation superscripts (Perplexity-style) */
   sup.cite { line-height: 0; }
   sup.cite a {
