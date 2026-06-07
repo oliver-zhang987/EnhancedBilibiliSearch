@@ -53,7 +53,7 @@ class Config:
     tids: int = 0                                  # 0 = all partitions
 
     # --- Selection / cost gates (tunable; compared during dev) ---
-    max_videos: int = 6                            # videos summarized per topic
+    max_videos: int = 4                            # videos summarized per topic (matches the UI default; dropdown offers more)
     candidate_pages: int = 2                       # search pages to pull before re-ranking
     allow_asr: bool = False                        # subtitle-only by default (cheapest)
     min_play: int = 1000                           # drop near-zero-view results
