@@ -707,6 +707,9 @@
     </div>
     <div class="hist-list" id="historyList"></div>
 
+    <!-- persistent account area (ChatGPT/Claude-style, bottom of sidebar) -->
+    <div class="acct-panel" id="acctPanel"></div>
+
     <div class="sidebar-foot">
       <button class="theme-toggle" id="themeToggle">
         <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -846,13 +849,30 @@
 </div>
 
 <style>
-  .tb-account{margin-left:auto;display:flex;align-items:center;gap:8px;position:relative}
-  .acct-login,.acct-btn{font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;border:1px solid var(--border,#33334a);background:var(--card,#1c1c28);color:var(--text,#eee);cursor:pointer}
-  .acct-login{background:linear-gradient(135deg,#6d5efc,#9b5efc);border:none;color:#fff;font-weight:600}
-  .acct-credits{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:600;color:#ffb84a;cursor:pointer;padding:5px 9px;border-radius:999px;background:rgba(255,184,74,.12)}
-  .acct-menu{position:absolute;top:44px;right:0;background:var(--card,#1c1c28);border:1px solid var(--border,#33334a);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);display:flex;flex-direction:column;min-width:132px;z-index:60;overflow:hidden}
-  .acct-menu button{font:inherit;font-size:13px;text-align:left;padding:10px 14px;background:none;border:none;color:var(--text,#eee);cursor:pointer}
-  .acct-menu button:hover{background:rgba(127,127,160,.14)}
+  /* --- persistent sidebar account card (bottom-left, ChatGPT/Claude style) --- */
+  .acct-panel{padding:8px 10px;border-top:1px solid var(--border,#33334a)}
+  .acct-card{width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;border:1px solid transparent;background:none;cursor:pointer;font:inherit;color:var(--text,#eee);text-align:left;transition:background .15s}
+  .acct-card:hover{background:rgba(127,127,160,.12)}
+  .acct-avatar{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;background:linear-gradient(135deg,#6d5efc,#9b5efc)}
+  .acct-meta{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+  .acct-name{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acct-bal{font-size:12px;color:#ffb84a;font-weight:600;display:flex;align-items:center;gap:3px}
+  .acct-chev{flex:none;color:var(--faint,#9a9ab0)}
+  .acct-login-cta{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;border:none;border-radius:12px;background:linear-gradient(135deg,#6d5efc,#9b5efc);color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(109,94,252,.35)}
+  .acct-login-cta:hover{filter:brightness(1.06)}
+  /* popover menu (shared by sidebar card + mobile topbar) */
+  .acct-pop{position:fixed;background:var(--card,#1c1c28);border:1px solid var(--border,#33334a);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);display:flex;flex-direction:column;min-width:172px;z-index:300;overflow:hidden;padding:5px;animation:popIn .14s ease}
+  .acct-pop .pop-head{padding:9px 11px 7px;border-bottom:1px solid var(--border,#33334a);margin-bottom:4px}
+  .acct-pop .pop-head .ph-name{font-size:13px;font-weight:600}
+  .acct-pop .pop-head .ph-bal{font-size:12px;color:#ffb84a;font-weight:600;margin-top:2px}
+  .acct-pop button{font:inherit;font-size:13px;text-align:left;padding:9px 11px;background:none;border:none;border-radius:8px;color:var(--text,#eee);cursor:pointer;display:flex;align-items:center;gap:9px}
+  .acct-pop button:hover{background:rgba(127,127,160,.14)}
+  .acct-pop button.danger{color:#ff7a7a}
+  /* compact account indicator in the mobile topbar */
+  .tb-account{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .tb-bal{display:inline-flex;align-items:center;gap:3px;font-size:12.5px;font-weight:600;color:#ffb84a;padding:4px 9px;border-radius:999px;background:rgba(255,184,74,.12)}
+  .tb-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,#6d5efc,#9b5efc);border:none;cursor:pointer}
+  .tb-login{font:inherit;font-size:13px;font-weight:600;padding:6px 13px;border-radius:999px;border:none;background:linear-gradient(135deg,#6d5efc,#9b5efc);color:#fff;cursor:pointer}
   .modal-overlay{position:fixed;inset:0;background:rgba(8,8,16,.62);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
   .modal-overlay[hidden]{display:none}
   .modal-card{width:100%;max-width:404px;background:var(--card,#1c1c28);border:1px solid var(--border,#33334a);border-radius:18px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:popIn .18s ease}
@@ -991,38 +1011,74 @@
     renderAccount();
   }
 
-  // ---- account chip ----
+  // ---- account UI: persistent sidebar card + compact mobile topbar ----
+  function _avatarText() {
+    var l4 = (authUser && authUser.phone_last4) || "";
+    return l4 ? l4.slice(-2) : "我";
+  }
+  function _credits() { return (authUser && authUser.credits != null) ? authUser.credits : "—"; }
+
   function renderAccount() {
-    var box = $("tbAccount"); if (!box) return;
+    var panel = $("acctPanel"), tb = $("tbAccount");
     if (authToken && authUser) {
-      box.innerHTML =
-        '<span class="acct-credits" id="acctCredits" title="积分余额（点击刷新）">◈ ' +
-        (authUser.credits != null ? authUser.credits : "—") + " 分</span>" +
-        '<button class="acct-btn" id="acctBtn" type="button">尾号 ' + esc(authUser.phone_last4 || "----") + " ▾</button>";
-      $("acctBtn").addEventListener("click", toggleAcctMenu);
-      $("acctCredits").addEventListener("click", function () { refreshMe(true); });
+      if (panel) {
+        panel.innerHTML =
+          '<button class="acct-card" id="acctCardBtn" type="button" title="账户">' +
+            '<span class="acct-avatar">' + esc(_avatarText()) + '</span>' +
+            '<span class="acct-meta"><span class="acct-name">尾号 ' + esc(authUser.phone_last4 || "----") + '</span>' +
+              '<span class="acct-bal">◈ ' + _credits() + ' 积分</span></span>' +
+            '<svg class="acct-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' +
+          '</button>';
+        $("acctCardBtn").addEventListener("click", function (e) { e.stopPropagation(); toggleAcctMenu(this); });
+      }
+      if (tb) {
+        tb.innerHTML =
+          '<span class="tb-bal" title="积分余额">◈ ' + _credits() + '</span>' +
+          '<button class="tb-avatar" id="tbAvatar" type="button" title="账户">' + esc(_avatarText()) + '</button>';
+        $("tbAvatar").addEventListener("click", function (e) { e.stopPropagation(); toggleAcctMenu(this); });
+      }
     } else {
-      box.innerHTML = '<button class="acct-login" id="acctLogin" type="button">登录 / 注册</button>';
-      $("acctLogin").addEventListener("click", function () { openAuth("login"); });
+      if (panel) {
+        panel.innerHTML =
+          '<button class="acct-login-cta" id="acctLoginCta" type="button">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>登录 / 注册</button>';
+        $("acctLoginCta").addEventListener("click", function () { openAuth("login"); });
+      }
+      if (tb) {
+        tb.innerHTML = '<button class="tb-login" id="tbLoginBtn" type="button">登录</button>';
+        $("tbLoginBtn").addEventListener("click", function () { openAuth("login"); });
+      }
     }
   }
-  function toggleAcctMenu() {
-    var ex = document.getElementById("acctMenu");
-    if (ex) { ex.remove(); return; }
-    var m = document.createElement("div");
-    m.id = "acctMenu"; m.className = "acct-menu";
-    m.innerHTML = '<button type="button" data-act="refresh">刷新积分</button>' +
-                  '<button type="button" data-act="logout">退出登录</button>';
-    $("tbAccount").appendChild(m);
-    m.addEventListener("click", function (e) {
-      var act = e.target.getAttribute("data-act");
+
+  function toggleAcctMenu(anchor) {
+    var ex = document.getElementById("acctPop");
+    if (ex) { ex.remove(); if (ex._anchor === anchor) return; }
+    var pop = document.createElement("div");
+    pop.id = "acctPop"; pop.className = "acct-pop"; pop._anchor = anchor;
+    pop.innerHTML =
+      '<div class="pop-head"><div class="ph-name">尾号 ' + esc(authUser ? (authUser.phone_last4 || "----") : "") + '</div>' +
+        '<div class="ph-bal">◈ ' + _credits() + ' 积分</div></div>' +
+      '<button type="button" data-act="refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>刷新积分</button>' +
+      '<button type="button" data-act="privacy"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>隐私政策</button>' +
+      '<button type="button" data-act="logout" class="danger"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>退出登录</button>';
+    document.body.appendChild(pop);
+    // smart positioning relative to the anchor
+    var r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    var left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+    var top = (r.top > window.innerHeight / 2) ? (r.top - h - 8) : (r.bottom + 8);
+    pop.style.left = left + "px"; pop.style.top = Math.max(8, top) + "px";
+    pop.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      var act = b.getAttribute("data-act");
       if (act === "refresh") refreshMe(true);
-      if (act === "logout") { setAuth("", null); toast("已退出登录"); }
-      m.remove();
+      else if (act === "privacy") $("privacyModal").hidden = false;
+      else if (act === "logout") { setAuth("", null); toast("已退出登录"); }
+      pop.remove();
     });
     setTimeout(function () {
       document.addEventListener("click", function once(ev) {
-        if (!m.contains(ev.target) && ev.target.id !== "acctBtn") { m.remove(); document.removeEventListener("click", once); }
+        if (!pop.contains(ev.target) && ev.target !== anchor) { pop.remove(); document.removeEventListener("click", once); }
       });
     }, 0);
   }
@@ -1228,12 +1284,14 @@
           });
           show("reportView");
           loadHistory();
+          refreshMe();   // credits were spent — sync the displayed balance
         } else if (data.status === "error") {
           stop();
           setStepperError();
           $("go").disabled = false;
           $("statusText").textContent = "出错：" + (data.error || "未知错误");
           toast(data.error || "生成失败", true);
+          refreshMe();   // failed runs are refunded server-side — resync balance
         }
       })
       .catch(function (err) {
