@@ -5,6 +5,8 @@ This directory contains a paper-standard LaTeX technical report for EBSearch
 
 ## Files
 
+- `technical_report.pdf` — **precompiled report (read this)**, built with
+  [Tectonic](https://tectonic-typesetting.github.io/) (`tectonic technical_report.tex`).
 - `technical_report.tex` — the report source (IEEE conference format).
 
 ## Document class
