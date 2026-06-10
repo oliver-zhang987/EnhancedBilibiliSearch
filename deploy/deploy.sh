@@ -9,6 +9,11 @@ DS_BASE=$(grep '^VS_LLM_BASE_URL=' "$VS" | cut -d= -f2- | tr -d '\r"')
 # Synthesis runs on DeepSeek dsv4pro (China-direct, no rate cap, richer output).
 # To route it to Groq gpt-oss-120b via the relay instead, set EBS_SYNTH_BASE_URL=
 # https://api.groq.com/openai/v1 + EBS_SYNTH_API_KEY + EBS_SYNTH_PROXY below.
+# Guardrail envs (optional; defaults apply when absent — add to the .env below to override):
+#   EBS_USER_REPORTS_PER_HOUR=6   per-user /api/research cap (sliding hour); 0 = off
+# Creator opt-out lives on the AIVideoSummary side: set VS_BLOCKLIST_FILE in
+# /opt/videosummary/.env (e.g. /opt/videosummary/blocklist.txt, one BV id or
+# uploader name per line); blocked videos return 451 and the fan-out skips them.
 # reuse an existing gate key if present, else mint one
 if [ -f /opt/ebsearch/.env ] && grep -q '^EBS_SERVER_API_KEY=' /opt/ebsearch/.env; then
   EBS_KEY=$(grep '^EBS_SERVER_API_KEY=' /opt/ebsearch/.env | cut -d= -f2-)
@@ -30,7 +35,10 @@ EBS_MIN_PLAY=1000
 EOF
 chmod 600 /opt/ebsearch/.env
 echo "=== build ==="
-docker build -q -t ebsearch:latest /opt/ebsearch
+# Aliyun PyPI mirror: the official index times out from the mainland.
+docker build -q -t ebsearch:latest \
+  --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+  /opt/ebsearch
 docker rm -f ebsearch 2>/dev/null || true
 mkdir -p /opt/ebsearch/data
 docker run -d --name ebsearch --restart unless-stopped --network host -m 300m \

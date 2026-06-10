@@ -1,6 +1,11 @@
 """FastAPI surface — OFFLINE. The pipeline's research() is monkeypatched to a stub,
 so no network/LLM/backend call ever happens. Skipped entirely if fastapi is absent
-(it's an optional 'server' dep); the core suite stays hermetic either way."""
+(it's an optional 'server' dep); the core suite stays hermetic either way.
+
+Auth model under test: access-code-only (anonymous account + Bearer JWT). The old
+X-API-Key gate was replaced by the account subsystem; these tests activate a user
+via the mock /api/auth/activate flow and exercise the API as that user.
+"""
 from __future__ import annotations
 
 import time
@@ -12,7 +17,6 @@ pytest.importorskip("fastapi", exc_type=ImportError)  # server extra absent -> s
 from fastapi.testclient import TestClient  # noqa: E402
 
 from ebsearch.models import TopicReport  # noqa: E402
-import ebsearch.server.app as appmod  # noqa: E402
 
 
 class _FakeResult:
@@ -34,17 +38,37 @@ def _fake_research(topic, cfg=None, *, logger=None):
 
 
 @pytest.fixture
-def client(monkeypatch):
-    # Patch the symbol the app actually calls (imported into the server module).
+def appmod(tmp_path, monkeypatch):
+    """Server module with an isolated account DB + the pipeline stubbed out."""
+    monkeypatch.setenv("AUTH_DB_PATH", str(tmp_path / "users.db"))
+    monkeypatch.setenv("AUTH_JWT_SECRET", "test-secret")
+    monkeypatch.setenv("EBS_DATA_DIR", str(tmp_path / "data"))
+    from ebsearch import account
+    account.reload_settings()
+    account.init_db()
+    account.create_invite_code("WELCOME", credits=1000, max_uses=100)
+
+    import ebsearch.server.app as appmod
     monkeypatch.setattr(appmod, "research", _fake_research)
-    monkeypatch.delenv("EBS_SERVER_API_KEY", raising=False)
+    return appmod
+
+
+@pytest.fixture
+def client(appmod):
     return TestClient(appmod.create_app())
 
 
-def _wait_done(client, job_id, headers=None, timeout=5.0):
+def _auth(client):
+    """Activate an anonymous account; return the Bearer headers."""
+    r = client.post("/api/auth/activate", json={"code": "WELCOME"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": "Bearer " + r.json()["token"]}
+
+
+def _wait_done(client, job_id, headers, timeout=5.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
-        r = client.get(f"/api/research/{job_id}", headers=headers or {})
+        r = client.get(f"/api/research/{job_id}", headers=headers)
         data = r.json()
         if data["status"] in ("done", "error"):
             return data
@@ -60,16 +84,17 @@ def test_health(client):
 def test_index_served(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert "B站主题综合报告" in r.text  # the standalone web page
+    assert "B站主题" in r.text  # the standalone web page
 
 
 def test_research_lifecycle(client):
-    r = client.post("/api/research", json={"topic": "RAG 检索增强", "max_videos": 3})
+    h = _auth(client)
+    r = client.post("/api/research", json={"topic": "RAG 检索增强", "max_videos": 3}, headers=h)
     assert r.status_code == 202
     job_id = r.json()["job_id"]
     assert job_id
 
-    data = _wait_done(client, job_id)
+    data = _wait_done(client, job_id, h)
     assert data["status"] == "done"
     assert "## 概览" in data["markdown"]
     assert data["report"]["topic"] == "RAG 检索增强"
@@ -81,16 +106,16 @@ def test_research_lifecycle(client):
 
 
 def test_empty_topic_rejected(client):
-    r = client.post("/api/research", json={"topic": "   "})
+    r = client.post("/api/research", json={"topic": "   "}, headers=_auth(client))
     assert r.status_code == 400
 
 
 def test_unknown_job_404(client):
-    r = client.get("/api/research/does-not-exist")
+    r = client.get("/api/research/does-not-exist", headers=_auth(client))
     assert r.status_code == 404
 
 
-def test_overrides_passed_to_config(monkeypatch):
+def test_overrides_passed_to_config(appmod, monkeypatch):
     captured = {}
 
     def _capture_research(topic, cfg=None, *, logger=None):
@@ -102,37 +127,30 @@ def test_overrides_passed_to_config(monkeypatch):
         return _FakeResult(topic)
 
     monkeypatch.setattr(appmod, "research", _capture_research)
-    monkeypatch.delenv("EBS_SERVER_API_KEY", raising=False)
     c = TestClient(appmod.create_app())
+    h = _auth(c)
     r = c.post("/api/research", json={
         "topic": "X", "max_videos": 9, "duration_filter": 4,
         "allow_asr": True, "query_expand": True, "allow_llm_rerank": True,
-    })
+    }, headers=h)
     job_id = r.json()["job_id"]
-    _wait_done(c, job_id)
+    _wait_done(c, job_id, h)
     assert captured == {
         "max_videos": 9, "duration_filter": 4, "allow_asr": True,
         "query_expand": True, "allow_llm_rerank": True,
     }
 
 
-def test_api_key_required_when_env_set(monkeypatch):
-    monkeypatch.setattr(appmod, "research", _fake_research)
-    monkeypatch.setenv("EBS_SERVER_API_KEY", "secret123")
-    c = TestClient(appmod.create_app())
-
-    # missing key -> 401
-    assert c.post("/api/research", json={"topic": "X"}).status_code == 401
-    # wrong key -> 401
-    assert c.post("/api/research", json={"topic": "X"},
-                  headers={"X-API-Key": "nope"}).status_code == 401
-    # correct key -> 202, and the same key required to poll
-    r = c.post("/api/research", json={"topic": "X"},
-               headers={"X-API-Key": "secret123"})
+def test_token_required(client):
+    """No/invalid Bearer token -> 401; the page + health stay public."""
+    assert client.post("/api/research", json={"topic": "X"}).status_code == 401
+    assert client.post("/api/research", json={"topic": "X"},
+                       headers={"Authorization": "Bearer not-a-token"}).status_code == 401
+    h = _auth(client)
+    r = client.post("/api/research", json={"topic": "X"}, headers=h)
     assert r.status_code == 202
+    # the job is private to its creator: polling without the token is rejected
     job_id = r.json()["job_id"]
-    assert c.get(f"/api/research/{job_id}").status_code == 401
-    data = _wait_done(c, job_id, headers={"X-API-Key": "secret123"})
-    assert data["status"] == "done"
-    # health stays open (no /api prefix)
-    assert c.get("/health").status_code == 200
+    assert client.get(f"/api/research/{job_id}").status_code == 401
+    assert _wait_done(client, job_id, h)["status"] == "done"
+    assert client.get("/health").status_code == 200

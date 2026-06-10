@@ -95,7 +95,8 @@ def classify_heuristic(topic: str) -> str:
 _LABELS_STR = ", ".join(t for t in REPORT_TYPES)
 
 _SYSTEM = (
-    "你是一个意图分类器。只输出一个英文标签，不要解释、不要标点、不要其它文字。"
+    "你是一个意图分类器。只输出一个英文标签，不要解释、不要标点、"
+    "不要提及任何其它候选标签或其它文字。"
 )
 
 

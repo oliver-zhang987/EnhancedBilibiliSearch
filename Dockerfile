@@ -1,6 +1,11 @@
 FROM python:3.11-slim
 WORKDIR /app
 
+# PyPI index override for slow/flaky routes (mainland servers pass
+# --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/).
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL} PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=5
+
 # Only what's needed to install + run (core is stdlib; server extra = fastapi/uvicorn).
 COPY pyproject.toml README.md /app/
 COPY ebsearch /app/ebsearch

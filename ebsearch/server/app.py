@@ -15,6 +15,8 @@ Env:
   EBS_SERVER_API_KEY  if set, ``/api/*`` requires header ``X-API-Key``.
   EBS_CORS_ORIGINS    comma-separated allowed origins (default ``*``).
   EBS_HOST/EBS_PORT   uvicorn bind (default 0.0.0.0:8020).
+  EBS_USER_REPORTS_PER_HOUR  per-user sliding-hour cap on /api/research
+                      (default 6, 0 = disabled); exceeding it returns HTTP 429.
 """
 from __future__ import annotations
 
@@ -92,6 +94,37 @@ class _Job:
 
 _JOBS: Dict[str, _Job] = {}
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ebs-research")
+
+
+# --------------------------------------------------------------------------- #
+# Per-user rate limit (anti-abuse): sliding-hour cap on report starts.
+# --------------------------------------------------------------------------- #
+class _UserRateLimiter:
+    """Sliding-window limiter keyed by user id. Thread-safe; limit 0 = disabled."""
+
+    def __init__(self, limit: int, window_seconds: float = 3600.0) -> None:
+        self.limit = limit
+        self._window = window_seconds
+        self._lock = threading.Lock()
+        self._stamps: Dict[str, List[float]] = {}
+
+    def is_allowed(self, key: str) -> bool:
+        if self.limit == 0:
+            return True
+        now = time.time()
+        cutoff = now - self._window
+        with self._lock:
+            stamps = [t for t in self._stamps.get(key, []) if t >= cutoff]
+            if len(stamps) >= self.limit:
+                self._stamps[key] = stamps
+                return False
+            stamps.append(now)
+            self._stamps[key] = stamps
+            return True
+
+
+# Re-initialised inside create_app so test reloads pick up the env var.
+_USER_LIMITER = _UserRateLimiter(0)
 
 
 # --------------------------------------------------------------------------- #
@@ -227,6 +260,10 @@ def _require_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
 # App factory
 # --------------------------------------------------------------------------- #
 def create_app() -> FastAPI:
+    global _USER_LIMITER
+    _USER_LIMITER = _UserRateLimiter(
+        int(os.environ.get("EBS_USER_REPORTS_PER_HOUR", "6") or "0"))
+
     app = FastAPI(title="EnhancedBilibiliSearch", version="0.1.0")
 
     origins_raw = os.environ.get("EBS_CORS_ORIGINS", "*").strip()
@@ -266,6 +303,12 @@ def create_app() -> FastAPI:
         topic = (req.topic or "").strip()
         if not topic:
             raise HTTPException(status_code=400, detail="topic is required")
+        # Anti-abuse: per-user sliding-hour quota, checked BEFORE any charge.
+        if not _USER_LIMITER.is_allowed(str(user_id)):
+            raise HTTPException(
+                status_code=429,
+                detail="请求过于频繁，请稍后再试（每小时上限 %d 次）" % _USER_LIMITER.limit,
+            )
         # Credit gate: charge the report up front (base + per-video + pro-synth extra),
         # refunded on failure / empty result by _run_job.
         cfg = Config.from_env()

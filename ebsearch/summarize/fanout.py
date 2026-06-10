@@ -95,6 +95,13 @@ def summarize_selected(
             else:
                 return hit.bvid, {"hit": hit, "job_id": None, "error": "无字幕（未开启ASR）"}
         except Exception as e:
+            # HTTP 451 = the backend's creator opt-out blocklist (legal takedown).
+            # Skip just this video; the rest of the report proceeds without it.
+            # (_post uses urllib, so this surfaces as urllib.error.HTTPError —
+            # detected via .code to stay agnostic of the exact exception type.)
+            if getattr(e, "code", None) == 451:
+                log("skipped %s: creator opt-out (451)" % hit.bvid)
+                return hit.bvid, {"hit": hit, "job_id": None, "error": "已按创作者要求跳过"}
             return hit.bvid, {"hit": hit, "job_id": None, "error": "submit:%s" % e}
 
     jobs: Dict[str, dict] = {}   # bvid -> {hit, job_id, error}
