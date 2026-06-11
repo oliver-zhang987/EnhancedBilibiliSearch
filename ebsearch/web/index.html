@@ -867,7 +867,7 @@
       <section class="view fade-in" id="inputView">
         <div class="hero">
           <h1>把一个主题，变成一份<span class="grad">可追溯的</span>研究报告</h1>
-          <p>输入主题，自动检索 B 站视频 → 智能筛选 → 逐条摘要 → 综合成一份带时间戳与来源的报告。</p>
+          <p>输入主题，自动检索 B 站视频 → 智能筛选 → 并行摘要 → 综合成一份带时间戳与来源的报告。</p>
         </div>
 
         <div class="composer">
@@ -944,7 +944,7 @@
         <div class="stepper" id="stepper" style="margin-top:26px;">
           <div class="step" data-step="search"><div class="bubble" data-n="1">1</div><div class="lbl">检索候选</div><div class="sub" id="sub-search"></div></div>
           <div class="step" data-step="select"><div class="bubble" data-n="2">2</div><div class="lbl">智能筛选</div><div class="sub" id="sub-select"></div></div>
-          <div class="step" data-step="summarize"><div class="bubble" data-n="3">3</div><div class="lbl">逐条摘要</div><div class="sub" id="sub-summarize"></div></div>
+          <div class="step" data-step="summarize"><div class="bubble" data-n="3">3</div><div class="lbl">并行摘要</div><div class="sub" id="sub-summarize"></div></div>
           <div class="step" data-step="synthesize"><div class="bubble" data-n="4">4</div><div class="lbl">综合成稿</div><div class="sub" id="sub-synthesize"></div></div>
         </div>
 
@@ -957,7 +957,7 @@
         <div class="live-feed hidden" id="liveFeed">
           <div class="feed-lbl">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-            <span id="feedLbl">AI 正在替你逐条观看</span>
+            <span id="feedLbl">AI 正在并行观看视频</span>
           </div>
           <div class="feed-grid" id="feedGrid"></div>
         </div>
@@ -1449,7 +1449,7 @@
     feedEls = {}; feedPh = [];
     $("feedGrid").innerHTML = "";
     $("liveFeed").classList.add("hidden");
-    $("feedLbl").textContent = "AI 正在替你逐条观看";
+    $("feedLbl").textContent = "AI 正在并行观看视频";
   }
   function parseFeed(lines) {
     var total = 0, order = [], byBv = {}, stageDone = false;
@@ -1523,7 +1523,7 @@
     var total = feed.total || feed.items.length;
     $("feedLbl").innerHTML = settled
       ? "已替你读完 <b>" + read + "</b> / " + total + " 个视频"
-      : "AI 正在替你逐条观看 · <b>" + read + "</b> / " + total;
+      : "AI 正在并行观看 " + total + " 条视频 · 已读完 <b>" + read + "</b>";
   }
 
   // derive the active stage index + sub-counts from the pipeline's log lines.
@@ -1577,7 +1577,7 @@
       // the skeleton is the synthesize-stage visual; before that the feed leads
       $("skel").classList.toggle("hidden", running < 3);
       var txt = STAGE_TEXT[running];
-      if (running === 2) txt = "AI 正在逐条观看并摘要（" + st.seen + "/" + (st.total || "?") + "）…";
+      if (running === 2) txt = "AI 正在并行观看并摘要（已读完 " + st.seen + "/" + (st.total || "?") + "）…";
       if (txt) $("statusText").textContent = txt;
     }
   }
