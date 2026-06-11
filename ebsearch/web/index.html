@@ -36,11 +36,10 @@
     --radius-sm: 9px;
     --sidebar-w: 286px;
     --maxw: 760px;
-    /* report layout: a fluid shell that fills the main column, plus a comfortable
-       cap on the *prose* measure so long-form text stays readable on huge screens. */
+    /* report layout: a fluid shell that fills the main column. NOTE: do NOT add
+       a prose-measure cap (max-width on paragraphs/lists) — text must fill its
+       box; the owner has rejected "text narrower than its container" twice. */
     --report-maxw: 1760px;   /* generous ceiling; centers only on very wide displays */
-    --prose-maxw: 88ch;      /* readable measure for long-form prose (≈42 个汉字/行)；
-                                cards stay fluid — only the text inside is capped */
     --toc-w: clamp(200px, 16vw, 280px);
     --ease: cubic-bezier(.21,.6,.35,1);
     /* ---- type scale (systematic; display sizes are fluid) ---- */
@@ -512,7 +511,7 @@
   /* Long-form prose: the card stays fluid (fills the content column at every
      viewport), only the text inside is capped to a readable measure so lines
      never become marathon-length on wide monitors. */
-  .lede { font-size: var(--fs-lede); line-height: var(--lh-prose); color: var(--ink-2); max-width: var(--prose-maxw); }
+  .lede { font-size: var(--fs-lede); line-height: var(--lh-prose); color: var(--ink-2); }
   .lede p { margin: 0 0 12px; } .lede p:last-child { margin: 0; }
   /* numbered citation superscripts (Perplexity-style) */
   sup.cite { line-height: 0; }
@@ -530,7 +529,7 @@
   .theme-item:first-child { padding-top: 8px; }
   .theme-item:last-child { border-bottom: none; padding-bottom: 0; }
   .theme-item .th-t { font-weight: 700; font-size: var(--fs-h3); letter-spacing: -.1px; margin-bottom: 5px; line-height: 1.5; }
-  .theme-item .th-s { color: var(--ink-2); line-height: 1.75; max-width: var(--prose-maxw); }
+  .theme-item .th-s { color: var(--ink-2); line-height: 1.75; }
   .theme-item .th-cov { margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px; }
   .cov-link {
     font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: var(--bg);
@@ -548,7 +547,7 @@
   .cd-col ul { margin: 0; padding-left: 18px; }
   .cd-col li { margin: 6px 0; line-height: 1.6; color: var(--ink-2); }
 
-  .plain-list { margin: 4px 0 0; padding-left: 20px; max-width: var(--prose-maxw); }
+  .plain-list { margin: 4px 0 0; padding-left: 20px; }
   .plain-list li { margin: 8px 0; line-height: 1.75; color: var(--ink-2); }
   .plain-list li::marker { color: var(--pink); }
 
@@ -564,7 +563,7 @@
   .video-card .vc-title { font-weight: 700; font-size: var(--fs-h3); letter-spacing: -.1px; flex: 1; min-width: 0; line-height: 1.5; }
   .video-card .vc-author { color: var(--muted); font-size: 12.5px; }
   .video-card .vc-bv { font-size: 11px; color: var(--faint); font-family: ui-monospace, Menlo, monospace; }
-  .video-card ul { margin: 0; padding-left: 18px; max-width: var(--prose-maxw); }
+  .video-card ul { margin: 0; padding-left: 18px; }
   .video-card li { margin: 6px 0; line-height: 1.7; color: var(--ink-2); }
   .ts-row { margin-top: 11px; display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
   .ts-row .ts-lbl { font-size: 11.5px; color: var(--faint); font-weight: 600; }
@@ -586,7 +585,7 @@
   }
   .watch-item .w-body { flex: 1; min-width: 0; }
   .watch-item .w-title { font-weight: 700; font-size: var(--fs-h3); letter-spacing: -.1px; line-height: 1.5; }
-  .watch-item .w-reason { color: var(--muted); font-size: 13px; margin-top: 2px; line-height: 1.65; max-width: var(--prose-maxw); }
+  .watch-item .w-reason { color: var(--muted); font-size: 13px; margin-top: 2px; line-height: 1.65; }
 
   /* coverage matrix */
   .matrix-scroll { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); }
@@ -625,7 +624,7 @@
     background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 13px 16px; min-width: 0;
   }
   .step-v .step-t { font-weight: 700; font-size: var(--fs-h3); letter-spacing: -.1px; margin-bottom: 5px; line-height: 1.5; }
-  .step-v .step-d { color: var(--ink-2); line-height: 1.75; max-width: var(--prose-maxw); }
+  .step-v .step-d { color: var(--ink-2); line-height: 1.75; }
   .step-v .step-ts { margin-top: 10px; }
 
   /* ---- news: vertical timeline ---- */
@@ -646,7 +645,7 @@
     background: var(--warn-soft); border-radius: 6px; padding: 2px 9px; margin-bottom: 7px;
     font-variant-numeric: tabular-nums;
   }
-  .tl-card .tl-event { color: var(--ink-2); line-height: 1.75; max-width: var(--prose-maxw); }
+  .tl-card .tl-event { color: var(--ink-2); line-height: 1.75; }
   .tl-card .tl-srcs { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 6px; }
 
   /* ---- comparison: a styled, sticky-first-column table that fills the column ---- */
@@ -679,7 +678,7 @@
     padding-left: 12px; border-left: 3px solid var(--pink); line-height: 1.5;
   }
   dl.glossary dt:first-child { margin-top: 4px; }
-  dl.glossary dd { margin: 6px 0 0 15px; color: var(--ink-2); line-height: 1.75; max-width: var(--prose-maxw); }
+  dl.glossary dd { margin: 6px 0 0 15px; color: var(--ink-2); line-height: 1.75; }
 
   /* ---- review: pro/con verdict cards ---- */
   .verdict-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 14px; margin-top: 4px; }
@@ -756,7 +755,6 @@
 
   /* fallback markdown render */
   .md-fallback { line-height: var(--lh-prose); }
-  .md-fallback p, .md-fallback li { max-width: var(--prose-maxw); }
   .md-fallback h1 { font-size: 24px; letter-spacing: -.4px; border-bottom: 2px solid var(--line); padding-bottom: 8px; }
   .md-fallback h2 { font-size: 19px; letter-spacing: -.25px; margin: 28px 0 10px; } .md-fallback h3 { font-size: 16px; }
   .md-fallback pre { background: var(--bg); padding: 14px; border-radius: 10px; overflow: auto; white-space: pre-wrap; }
